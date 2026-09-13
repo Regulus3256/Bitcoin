@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Bitcoin Realtime Chart</title>
+  <!-- Lightweight Charts ライブラリ (最新版対応) -->
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #131722; color: #d1d4dc; margin: 0; padding: 20px; }
+    h1 { margin-bottom: 5px; font-size: 24px; }
+    #price { font-size: 32px; font-weight: bold; color: #26a69a; margin-bottom: 20px; }
+    #chart { width: 100%; height: 500px; }
+  </style>
+</head>
+<body>
+  <h1>Bitcoin (BTC / USD)</h1>
+  <div id="price">Loading...</div>
+  <div id="chart"></div>
+
+  <script>
+    // チャートの初期化
+    const chartElement = document.getElementById('chart');
+    const chart = LightweightCharts.createChart(chartElement, {
+      layout: { background: { color: '#131722' }, textColor: '#d1d4dc' },
+      grid: { vertLines: { color: '#2B2B43' }, horzLines: { color: '#2B2B43' } },
+      timeScale: { timeVisible: true, secondsVisible: true }
+    });
+
+    // 【修正箇所】最新の Lightweight Charts v4 仕様の書き方に変更
+    const lineSeries = chart.addSeries(LightweightCharts.LineSeries, { 
+      color: '#26a69a', 
+      lineWidth: 2 
+    });
+
+    // C# API からデータを取得してチャートを更新する関数
+    async function updatePrice() {
+      try {
+        const res = await fetch('/api/btc');
+        const data = await res.json();
+        
+        // 価格表示を更新
+        document.getElementById('price').innerText = `$${data.priceUsd.toLocaleString()}`;
+
+        // チャートにデータポイントを追加
+        const timestamp = Math.floor(new Date(data.updatedAt).getTime() / 1000);
+        lineSeries.update({
+          time: timestamp,
+          value: data.priceUsd
+        });
+      } catch (err) {
+        console.error('Data fetch error:', err);
+      }
+    }
+
+    // 初回実行と10秒毎の更新
+    updatePrice();
+    setInterval(updatePrice, 10000);
+  </script>
+</body>
+</html>
