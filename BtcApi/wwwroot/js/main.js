@@ -10,6 +10,7 @@ const chartManager = new CandleChartManager('chart', document.getElementById('ca
 const statusEl = document.getElementById('status');
 const timeframeButtons = [...document.querySelectorAll('.timeframe-btn')];
 let currentRange = '1h';
+let tickInProgress = false;
 
 async function loadOlderHistory() {
     const oldestTime = chartManager.getOldestTime();
@@ -51,6 +52,11 @@ async function loadHistory(range = currentRange) {
 }
 
 async function tick() {
+    if (tickInProgress) {
+        return;
+    }
+
+    tickInProgress = true;
     try {
         const price = await api.fetchCurrentPrice();
         const candle = aggregators[currentRange].processPrice(price);
@@ -60,6 +66,8 @@ async function tick() {
     } catch (err) {
         console.error('Tick error:', err);
         statusEl.textContent = `Error: ${err.message}`;
+    } finally {
+        tickInProgress = false;
     }
 }
 
@@ -79,4 +87,4 @@ timeframeButtons.forEach(button => {
 chartManager.setLoadMoreHandler(loadOlderHistory);
 loadHistory();
 tick();
-setInterval(tick, 10000);
+setInterval(tick, 30000);
