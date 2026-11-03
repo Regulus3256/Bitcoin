@@ -21,9 +21,8 @@ WORKDIR /app
 # ビルド用ステージから成果物のみをコピー
 COPY --from=build /app/publish .
 
-# コンテナがListenするポートを設定
-ENV ASPNETCORE_URLS=http://+:8080
+# RenderのPORTを優先し、ローカルDockerでは8080を使う
 EXPOSE 8080
 
 # アプリケーションの実行（※ .csproj の名前に合わせて変更してください）
-ENTRYPOINT ["dotnet", "BtcApi.dll"]
+ENTRYPOINT ["sh", "-c", "ASPNETCORE_URLS=http://+:${PORT:-8080} exec dotnet BtcApi.dll"]

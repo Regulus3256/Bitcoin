@@ -46,6 +46,7 @@ async function loadHistory(range = currentRange) {
         }
     } catch (err) {
         console.error('History load error:', err);
+        statusEl.textContent = `履歴データを読み込めません: ${err.message}`;
     }
 }
 

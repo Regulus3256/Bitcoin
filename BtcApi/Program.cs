@@ -129,9 +129,61 @@ app.MapGet("/api/btc/history", async (IHttpClientFactory clientFactory, string r
 
         return Results.Ok(candles);
     }
-    catch
+    catch (Exception ex)
     {
-        return Results.Ok(Array.Empty<CandleData>());
+        app.Logger.LogWarning(ex, "Binance history request failed for range {Range}; trying CoinGecko fallback", normalizedRange);
+    }
+
+    try
+    {
+        var days = normalizedRange switch
+        {
+            "1m" or "1h" => 1,
+            "4h" => 30,
+            "1d" => 90,
+            "1w" => 365,
+            _ => 1
+        };
+        var fallbackUrl = $"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days={days}";
+        var fallbackJson = await client.GetStringAsync(fallbackUrl);
+        using var fallbackDocument = JsonDocument.Parse(fallbackJson);
+        var bucketSeconds = interval switch
+        {
+            "1m" => 60,
+            "1h" => 3600,
+            "4h" => 14400,
+            "1d" => 86400,
+            "1w" => 604800,
+            _ => 3600
+        };
+
+        var fallbackCandles = fallbackDocument.RootElement.GetProperty("prices")
+            .EnumerateArray()
+            .Select(point => new PricePoint(
+                Convert.ToInt64(point[0].GetDecimal() / 1000m),
+                point[1].GetDecimal()))
+            .Where(point => !before.HasValue || point.Time < before.Value)
+            .GroupBy(point => point.Time / bucketSeconds * bucketSeconds)
+            .Select(group =>
+            {
+                var points = group.OrderBy(point => point.Time).ToArray();
+                return new CandleData(
+                    group.Key,
+                    points[0].Price,
+                    points.Max(point => point.Price),
+                    points.Min(point => point.Price),
+                    points[^1].Price);
+            })
+            .OrderBy(candle => candle.Time)
+            .TakeLast(pageLimit)
+            .ToArray();
+
+        return Results.Ok(fallbackCandles);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Both Binance and CoinGecko history requests failed for range {Range}", normalizedRange);
+        return Results.Problem("Historical price data is temporarily unavailable.", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 
@@ -140,4 +192,5 @@ app.Run();
 record CoinGeckoResponse(BitcoinInfo Bitcoin);
 record BitcoinInfo(decimal Usd);
 record BinanceTickerPrice(decimal Price);
+record PricePoint(long Time, decimal Price);
 record CandleData(long Time, decimal Open, decimal High, decimal Low, decimal Close);
