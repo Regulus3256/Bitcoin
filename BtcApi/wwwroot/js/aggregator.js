@@ -5,6 +5,11 @@ class CandleAggregator {
         this.previousPrice = null;
     }
 
+    seed(candle) {
+        this.currentCandle = { ...candle };
+        this.previousPrice = candle.close;
+    }
+
     processPrice(price) {
         const nowUnix = Math.floor(Date.now() / 1000);
         const candleTime = Math.floor(nowUnix / this.intervalSeconds) * this.intervalSeconds;

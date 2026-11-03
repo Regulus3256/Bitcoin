@@ -5,62 +5,34 @@ using Microsoft.Extensions.Caching.Memory;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<KrakenPriceStream>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<KrakenPriceStream>());
 builder.Services.AddCors(options => {
     options.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
 
 var app = builder.Build();
 app.UseCors();
+app.UseWebSockets();
 
 // HTMLやJSなどの静的ファイルを配信する設定
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// ビットコインの現在価格（USD）を返すAPI
-var tickerRefreshLock = new SemaphoreSlim(1, 1);
-
-app.MapGet("/api/btc", async (IHttpClientFactory clientFactory, IMemoryCache cache) =>
+// WebSocketの最新価格を返すAPI
+app.MapGet("/api/btc", (KrakenPriceStream priceStream) =>
 {
-    if (cache.TryGetValue("btc-price", out PriceSnapshot? cachedPrice) && cachedPrice is not null)
+    var price = priceStream.CurrentPrice;
+    if (price is not null)
     {
-        return Results.Ok(cachedPrice);
+        return Results.Ok(price);
     }
 
-    await tickerRefreshLock.WaitAsync();
-    try
-    {
-        if (cache.TryGetValue("btc-price", out cachedPrice) && cachedPrice is not null)
-        {
-            return Results.Ok(cachedPrice);
-        }
-
-    var client = clientFactory.CreateClient();
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("BtcApp/1.0");
-
-    try
-    {
-        using var response = await client.GetAsync("https://api.kraken.com/0/public/Ticker?pair=XBTUSD");
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var result = document.RootElement.GetProperty("result");
-        var ticker = result.EnumerateObject().First().Value;
-        var price = decimal.Parse(ticker.GetProperty("c")[0].GetString()!, CultureInfo.InvariantCulture);
-
-        var priceSnapshot = new PriceSnapshot("BTC", price, DateTime.UtcNow);
-        cache.Set("btc-price", priceSnapshot, TimeSpan.FromSeconds(20));
-        return Results.Ok(priceSnapshot);
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogError(ex, "Kraken ticker request failed");
-        return Results.Problem("BTC price is temporarily unavailable.", statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    }
-    finally
-    {
-        tickerRefreshLock.Release();
-    }
+    return Results.Problem("Waiting for the live BTC price feed.", statusCode: StatusCodes.Status503ServiceUnavailable);
 });
+
+app.Map("/ws/price", async (HttpContext context, KrakenPriceStream priceStream) =>
+    await priceStream.AcceptBrowserConnectionAsync(context));
 
 app.MapGet("/api/btc/history", async (IHttpClientFactory clientFactory, IMemoryCache cache, string range = "1h", long? before = null, int? limit = null) =>
 {
@@ -153,4 +125,4 @@ app.MapGet("/api/btc/history", async (IHttpClientFactory clientFactory, IMemoryC
 app.Run();
 
 record CandleData(long Time, decimal Open, decimal High, decimal Low, decimal Close);
-record PriceSnapshot(string symbol, decimal priceUsd, DateTime updatedAt);
+public record PriceSnapshot(string symbol, decimal priceUsd, DateTime updatedAt);

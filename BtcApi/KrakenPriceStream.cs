@@ -1,0 +1,231 @@
+using System.Collections.Concurrent;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+
+public sealed class KrakenPriceStream : BackgroundService
+{
+    private const string KrakenSocketUrl = "wss://ws.kraken.com/v2";
+    private readonly ConcurrentDictionary<Guid, BrowserClient> _browserClients = new();
+    private readonly ILogger<KrakenPriceStream> _logger;
+    private PriceSnapshot? _currentPrice;
+
+    public KrakenPriceStream(ILogger<KrakenPriceStream> logger)
+    {
+        _logger = logger;
+    }
+
+    public PriceSnapshot? CurrentPrice => Volatile.Read(ref _currentPrice);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var reconnectDelay = TimeSpan.FromSeconds(2);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                using var socket = new ClientWebSocket();
+                socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+                await socket.ConnectAsync(new Uri(KrakenSocketUrl), stoppingToken);
+
+                var subscribeMessage = Encoding.UTF8.GetBytes(
+                    "{\"method\":\"subscribe\",\"params\":{\"channel\":\"ticker\",\"symbol\":[\"BTC/USD\"],\"snapshot\":true}}"
+                );
+                await socket.SendAsync(
+                    new ArraySegment<byte>(subscribeMessage),
+                    WebSocketMessageType.Text,
+                    true,
+                    stoppingToken);
+
+                await ReceivePricesAsync(socket, stoppingToken);
+                reconnectDelay = TimeSpan.FromSeconds(2);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Kraken WebSocket disconnected; reconnecting in {Delay}", reconnectDelay);
+            }
+
+            try
+            {
+                await Task.Delay(reconnectDelay, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            reconnectDelay = TimeSpan.FromSeconds(Math.Min(reconnectDelay.TotalSeconds * 2, 30));
+        }
+    }
+
+    private async Task ReceivePricesAsync(ClientWebSocket socket, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[8192];
+        using var message = new MemoryStream();
+
+        while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+        {
+            var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                return;
+            }
+
+            if (result.MessageType != WebSocketMessageType.Text)
+            {
+                continue;
+            }
+
+            message.Write(buffer, 0, result.Count);
+            if (!result.EndOfMessage)
+            {
+                continue;
+            }
+
+            var snapshot = ParseTicker(message.ToArray());
+            message.SetLength(0);
+            if (snapshot is null)
+            {
+                continue;
+            }
+
+            Volatile.Write(ref _currentPrice, snapshot);
+            await BroadcastAsync(JsonSerializer.SerializeToUtf8Bytes(snapshot), cancellationToken);
+        }
+    }
+
+    private static PriceSnapshot? ParseTicker(byte[] message)
+    {
+        using var document = JsonDocument.Parse(message);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("channel", out var channel)
+            || channel.GetString() != "ticker"
+            || !root.TryGetProperty("data", out var data)
+            || data.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var ticker = data[0];
+        if (!ticker.TryGetProperty("last", out var last))
+        {
+            return null;
+        }
+
+        return new PriceSnapshot("BTC", last.GetDecimal(), DateTime.UtcNow);
+    }
+
+    private async Task BroadcastAsync(byte[] payload, CancellationToken cancellationToken)
+    {
+        foreach (var client in _browserClients.Values)
+        {
+            try
+            {
+                await client.SendLock.WaitAsync(cancellationToken);
+                try
+                {
+                    if (client.Socket.State == WebSocketState.Open)
+                    {
+                        await client.Socket.SendAsync(
+                            new ArraySegment<byte>(payload),
+                            WebSocketMessageType.Text,
+                            true,
+                            cancellationToken);
+                    }
+                }
+                finally
+                {
+                    client.SendLock.Release();
+                }
+            }
+            catch (WebSocketException ex)
+            {
+                _logger.LogDebug(ex, "Removing disconnected browser WebSocket client");
+                _browserClients.TryRemove(client.Id, out _);
+            }
+        }
+    }
+
+    public async Task AcceptBrowserConnectionAsync(HttpContext context)
+    {
+        if (!context.WebSockets.IsWebSocketRequest)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        using var socket = await context.WebSockets.AcceptWebSocketAsync();
+        var client = new BrowserClient(Guid.NewGuid(), socket);
+        _browserClients[client.Id] = client;
+
+        try
+        {
+            var currentPrice = CurrentPrice;
+            if (currentPrice is not null)
+            {
+                await SendToClientAsync(client, JsonSerializer.SerializeToUtf8Bytes(currentPrice), context.RequestAborted);
+            }
+
+            var buffer = new byte[1024];
+            while (socket.State == WebSocketState.Open && !context.RequestAborted.IsCancellationRequested)
+            {
+                var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+        }
+        catch (WebSocketException ex)
+        {
+            _logger.LogDebug(ex, "Browser WebSocket client disconnected");
+        }
+        finally
+        {
+            _browserClients.TryRemove(client.Id, out _);
+            if (socket.State == WebSocketState.Open)
+            {
+                try
+                {
+                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+                }
+                catch (WebSocketException)
+                {
+                }
+            }
+        }
+    }
+
+    private static async Task SendToClientAsync(BrowserClient client, byte[] payload, CancellationToken cancellationToken)
+    {
+        await client.SendLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (client.Socket.State == WebSocketState.Open)
+            {
+                await client.Socket.SendAsync(
+                    new ArraySegment<byte>(payload),
+                    WebSocketMessageType.Text,
+                    true,
+                    cancellationToken);
+            }
+        }
+        finally
+        {
+            client.SendLock.Release();
+        }
+    }
+
+    private sealed record BrowserClient(Guid Id, WebSocket Socket)
+    {
+        public SemaphoreSlim SendLock { get; } = new(1, 1);
+    }
+}
