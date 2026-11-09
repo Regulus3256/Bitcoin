@@ -9,7 +9,44 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <h1>BTC/USD Realtime Candlestick Chart</h1>
+    <header class="page-header">
+        <div class="title-tools">
+            <h1>BTC/USD Realtime Candlestick Chart</h1>
+            <button id="tools-toggle" class="tools-toggle" type="button" aria-label="チャートツール" aria-expanded="false" aria-controls="tools-dialog" title="チャートツール">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+        <aside id="candle-detail" class="candle-detail">
+            <div class="detail-grid">
+                <div class="detail-item"><span>始値</span><strong id="detail-open">-</strong></div>
+                <div class="detail-item"><span>高値</span><strong id="detail-high">-</strong></div>
+                <div class="detail-item"><span>低値</span><strong id="detail-low">-</strong></div>
+                <div class="detail-item"><span>終値</span><strong id="detail-close">-</strong></div>
+            </div>
+        </aside>
+    </header>
+
+    <dialog id="tools-dialog" class="tools-dialog" aria-labelledby="tools-title">
+        <div class="dialog-header">
+            <h2 id="tools-title">チャートツール</h2>
+            <button id="tools-close" class="dialog-close" type="button" aria-label="閉じる" title="閉じる">×</button>
+        </div>
+        <section class="dialog-section">
+            <h3>インジケーター</h3>
+            <label class="tool-option"><input type="checkbox" data-sma="10"><span class="sma-swatch sma-10"></span><span>10</span></label>
+            <label class="tool-option"><input type="checkbox" data-sma="50"><span class="sma-swatch sma-50"></span><span>50</span></label>
+            <label class="tool-option"><input type="checkbox" data-sma="100"><span class="sma-swatch sma-100"></span><span>100</span></label>
+            <label class="tool-option"><input type="checkbox" data-sma="200"><span class="sma-swatch sma-200"></span><span>200</span></label>
+        </section>
+        <section class="dialog-section">
+            <h3>描画ツール</h3>
+            <button id="fib-tool" class="fib-tool-button" type="button" aria-pressed="false">
+                <span class="fib-tool-icon" aria-hidden="true"><i></i><i></i><i></i><b></b></span>
+                <span>フィボナッチ</span>
+            </button>
+            <button id="fib-clear" class="menu-action secondary" type="button">フィボナッチを消去</button>
+        </section>
+    </dialog>
 
     <div class="toolbar" aria-label="Timeframe selector">
         <button class="timeframe-btn" data-range="1m">1分足</button>
@@ -21,18 +58,9 @@
 
     <div class="chart-layout">
         <div id="chart"></div>
-        <aside id="candle-detail" class="candle-detail">
-            <div class="detail-grid">
-                <div class="detail-item"><span>始値</span><strong id="detail-open">-</strong></div>
-                <div class="detail-item"><span>高値</span><strong id="detail-high">-</strong></div>
-                <div class="detail-item"><span>低値</span><strong id="detail-low">-</strong></div>
-                <div class="detail-item"><span>終値</span><strong id="detail-close">-</strong></div>
-            </div>
-        </aside>
     </div>
     <div id="status" class="status">Connecting...</div>
 
-    <!-- 自作JavaScript（依存関係の順に読み込む） -->
     <script src="js/api.js"></script>
     <script src="js/aggregator.js"></script>
     <script src="js/chart.js"></script>

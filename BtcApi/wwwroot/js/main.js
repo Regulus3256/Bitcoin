@@ -9,6 +9,9 @@ const aggregators = {
 const chartManager = new CandleChartManager('chart', document.getElementById('candle-detail'));
 const statusEl = document.getElementById('status');
 const timeframeButtons = [...document.querySelectorAll('.timeframe-btn')];
+const toolsToggle = document.getElementById('tools-toggle');
+const toolsDialog = document.getElementById('tools-dialog');
+const fibonacciButton = document.getElementById('fib-tool');
 let currentRange = '1h';
 let priceSocket;
 let reconnectDelay = 2000;
@@ -31,7 +34,7 @@ async function loadOlderHistory() {
 
 async function loadHistory(range = currentRange) {
     try {
-        const candles = await api.fetchHistoricalCandles(range, null, range === '1m' ? 120 : 120);
+        const candles = await api.fetchHistoricalCandles(range, null, 250);
         if (range !== currentRange) {
             return;
         }
@@ -75,8 +78,10 @@ function connectPriceStream() {
             }
 
             const candle = aggregators[currentRange].processPrice(price);
-            chartManager.updateCandle(candle);
-            statusEl.textContent = `BTC/USD $${price.toLocaleString()} | ${new Date(update.updatedAt).toLocaleTimeString()} | ${currentRange.toUpperCase()}`;
+            chartManager.updateCandle(candle, price);
+            statusEl.textContent = chartManager.fibonacciDrawing
+                ? (chartManager.fibonacciAnchor ? 'チャートをクリックしてフィボナッチの2点目を選択' : 'チャートをクリックしてフィボナッチの1点目を選択')
+                : `BTC/USD $${price.toLocaleString()} | ${new Date(update.updatedAt).toLocaleTimeString()} | ${currentRange.toUpperCase()}`;
         } catch (err) {
             console.error('Price stream message error:', err);
         }
@@ -102,6 +107,48 @@ function setRange(range) {
 
 timeframeButtons.forEach(button => {
     button.addEventListener('click', () => setRange(button.dataset.range));
+});
+
+toolsToggle.addEventListener('click', () => {
+    if (!toolsDialog.open) {
+        toolsDialog.showModal();
+        toolsToggle.setAttribute('aria-expanded', 'true');
+    }
+});
+
+document.getElementById('tools-close').addEventListener('click', () => {
+    toolsDialog.close();
+});
+
+toolsDialog.addEventListener('close', () => {
+    toolsToggle.setAttribute('aria-expanded', 'false');
+});
+
+document.querySelectorAll('[data-sma]').forEach(input => {
+    input.addEventListener('change', () => {
+        chartManager.setSmaVisible(input.dataset.sma, input.checked);
+    });
+});
+
+fibonacciButton.addEventListener('click', () => {
+    chartManager.setFibonacciDrawing(!chartManager.fibonacciDrawing);
+    toolsDialog.close();
+});
+
+document.getElementById('fib-clear').addEventListener('click', () => {
+    chartManager.clearFibonacci();
+});
+
+chartManager.setFibonacciStateHandler(state => {
+    const active = state === 'first-point' || state === 'second-point';
+    fibonacciButton.setAttribute('aria-pressed', String(active));
+    if (state === 'first-point') {
+        statusEl.textContent = 'チャートをクリックしてフィボナッチの始点を選択';
+    } else if (state === 'second-point') {
+        statusEl.textContent = 'チャートをクリックしてフィボナッチの終点を選択';
+    } else if (state === 'complete') {
+        statusEl.textContent = 'フィボナッチを描画しました。A/Bの丸をドラッグして調整できます';
+    }
 });
 
 chartManager.setLoadMoreHandler(loadOlderHistory);
