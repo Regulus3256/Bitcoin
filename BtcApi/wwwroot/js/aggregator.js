@@ -1,4 +1,4 @@
-class CandleAggregator {
+export class CandleAggregator {
     constructor(intervalSeconds = 60) {
         this.intervalSeconds = intervalSeconds;
         this.currentCandle = null;

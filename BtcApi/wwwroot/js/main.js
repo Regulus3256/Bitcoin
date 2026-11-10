@@ -1,3 +1,7 @@
+import { BtcApiClient } from './api.js';
+import { CandleAggregator } from './aggregator.js';
+import { CandleChartManager } from './chart.js';
+
 const api = new BtcApiClient();
 const aggregators = {
     '1m': new CandleAggregator(60),
@@ -12,6 +16,8 @@ const timeframeButtons = [...document.querySelectorAll('.timeframe-btn')];
 const toolsToggle = document.getElementById('tools-toggle');
 const toolsDialog = document.getElementById('tools-dialog');
 const fibonacciButton = document.getElementById('fib-tool');
+const initialVisibleCandles = 250;
+const smaWarmupCandles = 199;
 let currentRange = '1h';
 let priceSocket;
 let reconnectDelay = 2000;
@@ -34,7 +40,7 @@ async function loadOlderHistory() {
 
 async function loadHistory(range = currentRange) {
     try {
-        const candles = await api.fetchHistoricalCandles(range, null, 250);
+        const candles = await api.fetchHistoricalCandles(range, null, initialVisibleCandles + smaWarmupCandles);
         if (range !== currentRange) {
             return;
         }

@@ -1,18 +1,13 @@
-using BtcApi.Models;
-using BtcApi.Services;
+using BtcApi.Application.Abstractions;
 
 namespace BtcApi.Endpoints;
 
-/// <summary>
-/// Registers HTTP endpoints for BTC prices, historical candles, and the live price stream.
-/// </summary>
+/// <summary>BTC価格、過去ローソク足、ライブ配信のHTTPルートを登録します。</summary>
 public static class BtcEndpoints
 {
-    /// <summary>
-    /// Maps all BTC-related routes onto the application.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder used by the application.</param>
-    /// <returns>The same route builder, with BTC routes registered.</returns>
+    /// <summary>BTC関連のルートをアプリケーションへ登録します。</summary>
+    /// <param name="endpoints">アプリケーションが使用するルートビルダー。</param>
+    /// <returns>BTC関連ルートを追加した同じルートビルダー。</returns>
     public static IEndpointRouteBuilder MapBtcEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/btc", GetCurrentPrice);
@@ -21,28 +16,24 @@ public static class BtcEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Returns the most recently received BTC/USD price.
-    /// </summary>
-    /// <param name="priceStream">The shared Kraken WebSocket price stream.</param>
-    /// <returns>HTTP 200 with a price snapshot, or HTTP 503 until the first price arrives.</returns>
-    private static IResult GetCurrentPrice(KrakenPriceStream priceStream)
+    /// <summary>最後に受信したBTC/USD価格を返します。</summary>
+    /// <param name="priceHub">最新価格を保持するアプリケーションHub。</param>
+    /// <returns>価格があればHTTP 200、初回受信前ならHTTP 503。</returns>
+    private static IResult GetCurrentPrice(ILivePriceHub priceHub)
     {
-        var price = priceStream.CurrentPrice;
+        var price = priceHub.CurrentPrice;
         return price is not null
             ? Results.Ok(price)
             : Results.Problem("Waiting for the live BTC price feed.", statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
-    /// <summary>
-    /// Returns historical BTC/USD candles for the requested timeframe and page.
-    /// </summary>
-    /// <param name="marketData">The Kraken-backed historical market-data service.</param>
-    /// <param name="range">Candle interval: 1m, 1h, 4h, 1d, or 1w. Defaults to 1h.</param>
-    /// <param name="before">Optional exclusive Unix-seconds cursor used to request older candles.</param>
-    /// <param name="limit">Optional candle count, clamped by the service to its supported range.</param>
-    /// <param name="cancellationToken">Token that cancels data retrieval when the HTTP request ends.</param>
-    /// <returns>HTTP 200 with an ordered candle array, or HTTP 502 if market data is unavailable.</returns>
+    /// <summary>指定された時間足・ページのBTC/USD過去ローソク足を返します。</summary>
+    /// <param name="marketData">過去マーケットデータを取得するアプリケーションサービス。</param>
+    /// <param name="range">時間足（1m、1h、4h、1d、1w）。既定値は1h。</param>
+    /// <param name="before">これより古い足を取得するためのUnix秒カーソル（省略可）。</param>
+    /// <param name="limit">取得本数（省略可）。対応範囲に補正されます。</param>
+    /// <param name="cancellationToken">HTTPリクエスト終了時に取得を中断するトークン。</param>
+    /// <returns>成功時はHTTP 200と時系列順の配列、データ取得不可時はHTTP 502。</returns>
     private static async Task<IResult> GetHistory(
         IBtcMarketDataService marketData,
         string range = "1h",
@@ -63,14 +54,12 @@ public static class BtcEndpoints
         }
     }
 
-    /// <summary>
-    /// Accepts a browser WebSocket connection and streams shared price updates to it.
-    /// </summary>
-    /// <param name="context">The current HTTP request and WebSocket connection context.</param>
-    /// <param name="priceStream">The shared Kraken WebSocket price stream.</param>
-    /// <returns>A task that completes when the browser connection closes.</returns>
-    private static Task HandlePriceStream(HttpContext context, KrakenPriceStream priceStream)
+    /// <summary>ブラウザーのWebSocket接続を受け付け、最新価格を配信します。</summary>
+    /// <param name="context">現在のHTTPリクエストとWebSocket接続のコンテキスト。</param>
+    /// <param name="priceHub">価格配信を担当するアプリケーションHub。</param>
+    /// <returns>ブラウザー接続が閉じたときに完了するタスク。</returns>
+    private static Task HandlePriceStream(HttpContext context, ILivePriceHub priceHub)
     {
-        return priceStream.AcceptBrowserConnectionAsync(context);
+        return priceHub.AcceptBrowserConnectionAsync(context);
     }
 }

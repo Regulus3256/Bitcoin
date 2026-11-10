@@ -1,14 +1,9 @@
 using BtcApi.Endpoints;
-using BtcApi.Services;
-using Microsoft.Extensions.Caching.Memory;
+using BtcApi.Infrastructure.DependencyInjection;
 
 // アプリケーションの依存関係、ミドルウェア、機能エンドポイントを登録します。
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddHttpClient();
-builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<KrakenPriceStream>();
-builder.Services.AddHostedService(provider => provider.GetRequiredService<KrakenPriceStream>());
-builder.Services.AddSingleton<IBtcMarketDataService, KrakenMarketDataService>();
+builder.Services.AddBtcApiServices();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>

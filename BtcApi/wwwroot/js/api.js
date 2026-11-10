@@ -1,4 +1,4 @@
-class BtcApiClient {
+export class BtcApiClient {
     async fetchCurrentPrice() {
         const response = await fetch('/api/btc');
         if (!response.ok) {

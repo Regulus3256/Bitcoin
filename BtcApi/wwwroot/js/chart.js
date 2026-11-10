@@ -1,4 +1,4 @@
-class CandleChartManager {
+export class CandleChartManager {
     constructor(containerId, detailPanel) {
         this.container = document.getElementById(containerId);
         this.detailPanel = detailPanel;
