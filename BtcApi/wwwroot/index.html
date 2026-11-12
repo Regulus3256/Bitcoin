@@ -6,12 +6,12 @@
     <!-- 外部ライブラリ -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <!-- 自作CSS -->
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=20261111-demo-orders">
 </head>
 <body>
     <header class="page-header">
         <div class="title-tools">
-            <h1>BTC/USD Realtime Candlestick Chart</h1>
+            <h1 id="chart-title">BTC/USD Realtime Candlestick Chart</h1>
             <button id="tools-toggle" class="tools-toggle" type="button" aria-label="チャートツール" aria-expanded="false" aria-controls="tools-dialog" title="チャートツール">
                 <span></span><span></span><span></span>
             </button>
@@ -49,18 +49,85 @@
     </dialog>
 
     <div class="toolbar" aria-label="Timeframe selector">
+        <label class="market-select-label">銘柄
+            <select id="market-symbol-select" aria-label="銘柄"></select>
+        </label>
         <button class="timeframe-btn" data-range="1m">1分足</button>
         <button class="timeframe-btn active" data-range="1h">1時間足</button>
         <button class="timeframe-btn" data-range="4h">4時間足</button>
         <button class="timeframe-btn" data-range="1d">日足</button>
         <button class="timeframe-btn" data-range="1w">週足</button>
+        <button id="demo-mode-toggle" class="demo-mode-button" type="button" aria-pressed="false">
+            <span aria-hidden="true">↗</span>
+            <span>デモ取引</span>
+        </button>
     </div>
+
+    <section class="replay-panel" id="replay-panel" aria-labelledby="replay-title" hidden>
+        <div class="replay-header">
+            <h2 id="replay-title">過去チャート デモ取引</h2>
+            <div class="replay-coverage" id="replay-coverage">履歴データを確認中...</div>
+        </div>
+        <p class="replay-disclaimer" id="replay-disclaimer">デモ専用。過去価格はBTC/USDTをUSDの近似として使用し、手数料を含むシミュレーション約定です。</p>
+        <div class="replay-setup" id="replay-setup">
+            <label>開始日<input id="replay-date" type="date"></label>
+            <label>再生期間
+                <select id="replay-days">
+                    <option value="1">1日</option>
+                    <option value="3">3日</option>
+                    <option value="7" selected>7日</option>
+                    <option value="30">30日</option>
+                </select>
+            </label>
+            <label id="replay-capital-label">初期資金 USD<input id="replay-capital" type="number" min="100" step="100" value="10000"></label>
+            <button id="replay-start" class="replay-button primary" type="button">セッション開始</button>
+            <button id="replay-resume" class="replay-button" type="button" hidden>前回のセッションを復元</button>
+        </div>
+        <div class="replay-session" id="replay-session" hidden>
+            <div class="replay-controls">
+                <button id="replay-play" class="replay-button primary" type="button">再生</button>
+                <button id="replay-step" class="replay-button" type="button">1時間足進める</button>
+                <label>速度
+                    <select id="replay-speed">
+                        <option value="1">1x</option>
+                        <option value="5">5x</option>
+                        <option value="20">20x</option>
+                        <option value="60">60x</option>
+                    </select>
+                </label>
+                <time id="replay-clock">-</time>
+                <button id="replay-reset" class="replay-button danger" type="button">セッション終了</button>
+            </div>
+            <div class="replay-account">
+                <div><span>現金</span><strong id="account-cash">$0</strong></div>
+                <div><span id="account-base-asset">BTC</span><strong id="account-btc">0</strong></div>
+                <div><span>評価額</span><strong id="account-equity">$0</strong></div>
+                <div><span>確定損益</span><strong id="account-realized">$0</strong></div>
+                <div><span>含み損益</span><strong id="account-unrealized">$0</strong></div>
+            </div>
+            <div class="replay-orders">
+                <label>売買<select id="order-side"><option value="buy">買い</option><option value="sell">売り</option></select></label>
+                <label>注文方法<select id="order-type"><option value="market">成行</option><option value="limit">指値</option></select></label>
+                <label><span id="order-amount-label">注文額</span> <span id="replay-quote-asset">USD</span><input id="order-amount" type="number" min="0.00000001" step="any" value="1000"></label>
+                <label id="order-limit-price-wrap" hidden>指値価格 <span id="replay-price-asset">USD</span><input id="order-limit-price" type="number" min="0.00000001" step="any"></label>
+                <button id="order-submit" class="replay-button buy" type="button">成行買い</button>
+                <span>手数料 0.1% / 指値は以降の1分足で判定</span>
+            </div>
+            <div id="pending-orders" class="pending-orders" aria-live="polite"></div>
+            <div class="trade-log-wrap">
+                <table class="trade-log">
+                    <thead><tr><th>時刻</th><th>銘柄</th><th>売買</th><th>価格</th><th>数量</th><th>手数料</th><th>実現損益</th></tr></thead>
+                    <tbody id="trade-log-body"><tr><td colspan="7">取引履歴はありません</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
 
     <div class="chart-layout">
         <div id="chart"></div>
     </div>
     <div id="status" class="status">Connecting...</div>
 
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/main.js?v=20261111-demo-orders"></script>
 </body>
 </html>

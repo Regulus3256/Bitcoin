@@ -6,7 +6,7 @@ using BtcApi.Domain.Models;
 namespace BtcApi.Infrastructure.Kraken;
 
 /// <summary>Krakenの公開REST APIを使って過去足取得契約を実装します。</summary>
-public sealed class KrakenOhlcClient : IKrakenOhlcClient
+public sealed class KrakenOhlcClient : IKrakenOhlcClient, IKrakenRecentCandleClient
 {
     private const string Endpoint = "https://api.kraken.com/0/public/OHLC";
     private readonly IHttpClientFactory _httpClientFactory;
@@ -22,9 +22,9 @@ public sealed class KrakenOhlcClient : IKrakenOhlcClient
     }
 
     /// <inheritdoc />
-    public async Task<CandleData[]> GetCandlesAsync(CandleTimeframe timeframe, long? before, int limit, CancellationToken cancellationToken)
+    public async Task<CandleData[]> GetCandlesAsync(MarketInstrument instrument, CandleTimeframe timeframe, long? before, int limit, CancellationToken cancellationToken)
     {
-        var requestUrl = $"{Endpoint}?pair=XBTUSD&interval={timeframe.KrakenIntervalMinutes}";
+        var requestUrl = $"{Endpoint}?pair={Uri.EscapeDataString(instrument.KrakenPair)}&interval={timeframe.KrakenIntervalMinutes}";
         if (before.HasValue)
         {
             var since = Math.Max(0, before.Value - (long)limit * timeframe.KrakenIntervalMinutes * 60);
@@ -44,4 +44,8 @@ public sealed class KrakenOhlcClient : IKrakenOhlcClient
             throw new HttpRequestException("Kraken historical price data is unavailable.", ex);
         }
     }
+
+    /// <inheritdoc />
+    public Task<CandleData[]> GetRecentMinutesAsync(MarketInstrument instrument, int limit, CancellationToken cancellationToken) =>
+        GetCandlesAsync(instrument, CandleTimeframe.FromKey("1m"), null, Math.Clamp(limit, 1, 720), cancellationToken);
 }

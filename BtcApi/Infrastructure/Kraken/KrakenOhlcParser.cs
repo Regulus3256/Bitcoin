@@ -40,5 +40,8 @@ internal static class KrakenOhlcParser
         decimal.Parse(entry[1].GetString()!, CultureInfo.InvariantCulture),
         decimal.Parse(entry[2].GetString()!, CultureInfo.InvariantCulture),
         decimal.Parse(entry[3].GetString()!, CultureInfo.InvariantCulture),
-        decimal.Parse(entry[4].GetString()!, CultureInfo.InvariantCulture));
+        decimal.Parse(entry[4].GetString()!, CultureInfo.InvariantCulture),
+        entry.GetArrayLength() > 6
+            ? decimal.Parse(entry[6].GetString()!, CultureInfo.InvariantCulture)
+            : 0);
 }

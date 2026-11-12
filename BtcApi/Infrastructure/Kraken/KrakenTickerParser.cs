@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BtcApi.Domain.MarketData;
 using BtcApi.Domain.Models;
 
 namespace BtcApi.Infrastructure.Kraken;
@@ -16,12 +17,19 @@ internal static class KrakenTickerParser
         if (!root.TryGetProperty("channel", out var channel)
             || channel.GetString() != "ticker"
             || !root.TryGetProperty("data", out var data)
-            || data.GetArrayLength() == 0
-            || !data[0].TryGetProperty("last", out var last))
+            || data.GetArrayLength() == 0)
         {
             return null;
         }
 
-        return new PriceSnapshot("BTC", last.GetDecimal(), DateTime.UtcNow);
+        var ticker = data[0];
+        if (!ticker.TryGetProperty("symbol", out var symbolElement)
+            || !ticker.TryGetProperty("last", out var last))
+        {
+            return null;
+        }
+
+        var instrument = MarketInstrument.FindByKrakenWebSocketSymbol(symbolElement.GetString() ?? string.Empty);
+        return instrument is null ? null : new PriceSnapshot(instrument.Code, last.GetDecimal(), DateTime.UtcNow);
     }
 }

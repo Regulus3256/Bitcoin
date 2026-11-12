@@ -12,5 +12,5 @@ public interface IKrakenOhlcClient
     /// <param name="limit">返却する最大ローソク足数。</param>
     /// <param name="cancellationToken">HTTPリクエストをキャンセルするトークン。</param>
     /// <returns>時刻の昇順に並んだローソク足配列。</returns>
-    Task<CandleData[]> GetCandlesAsync(CandleTimeframe timeframe, long? before, int limit, CancellationToken cancellationToken);
+    Task<CandleData[]> GetCandlesAsync(MarketInstrument instrument, CandleTimeframe timeframe, long? before, int limit, CancellationToken cancellationToken);
 }

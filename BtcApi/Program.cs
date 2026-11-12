@@ -3,7 +3,7 @@ using BtcApi.Infrastructure.DependencyInjection;
 
 // アプリケーションの依存関係、ミドルウェア、機能エンドポイントを登録します。
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddBtcApiServices();
+builder.Services.AddBtcApiServices(builder.Configuration);
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>

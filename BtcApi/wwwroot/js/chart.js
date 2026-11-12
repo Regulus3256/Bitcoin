@@ -3,6 +3,7 @@ export class CandleChartManager {
         this.container = document.getElementById(containerId);
         this.detailPanel = detailPanel;
         this.allCandles = [];
+        this.smaWarmupCandles = [];
         this.loadMoreHandler = null;
         this.loadingMore = false;
         this.defaultCandleSize = 12;
@@ -336,16 +337,18 @@ export class CandleChartManager {
     }
 
     refreshSmaData() {
+        const candles = [...this.smaWarmupCandles, ...this.allCandles];
+        const visibleStartTime = this.allCandles[0]?.time ?? Number.NEGATIVE_INFINITY;
         for (const [period, indicator] of this.smaSeries) {
             const points = [];
             let sum = 0;
-            for (let index = 0; index < this.allCandles.length; index += 1) {
-                sum += this.allCandles[index].close;
+            for (let index = 0; index < candles.length; index += 1) {
+                sum += candles[index].close;
                 if (index >= period) {
-                    sum -= this.allCandles[index - period].close;
+                    sum -= candles[index - period].close;
                 }
-                if (index >= period - 1) {
-                    points.push({ time: this.allCandles[index].time, value: sum / period });
+                if (index >= period - 1 && candles[index].time >= visibleStartTime) {
+                    points.push({ time: candles[index].time, value: sum / period });
                 }
             }
             indicator.series.setData(points);
@@ -353,15 +356,16 @@ export class CandleChartManager {
     }
 
     updateLatestSmaData() {
-        const latestIndex = this.allCandles.length - 1;
+        const candles = [...this.smaWarmupCandles, ...this.allCandles];
+        const latestIndex = candles.length - 1;
         for (const [period, indicator] of this.smaSeries) {
-            if (this.allCandles.length < period) {
+            if (candles.length < period || this.allCandles.length === 0) {
                 continue;
             }
 
-            const recentCandles = this.allCandles.slice(-period);
+            const recentCandles = candles.slice(-period);
             const average = recentCandles.reduce((sum, candle) => sum + candle.close, 0) / period;
-            indicator.series.update({ time: this.allCandles[latestIndex].time, value: average });
+            indicator.series.update({ time: candles[latestIndex].time, value: average });
         }
     }
 
@@ -378,8 +382,9 @@ export class CandleChartManager {
         this.loadMoreHandler = handler;
     }
 
-    setCandles(candles, autoScroll = true) {
+    setCandles(candles, autoScroll = true, smaWarmupCandles = []) {
         this.allCandles = candles;
+        this.smaWarmupCandles = smaWarmupCandles;
         this.series.setData(candles);
         this.refreshSmaData();
         this.applyCandleSize(this.currentCandleSize);
@@ -416,30 +421,44 @@ export class CandleChartManager {
     }
 
     updateCandle(candleData, currentPrice = candleData.close) {
+        this.updateCandles([candleData], currentPrice);
+    }
+
+    updateCandles(candles, currentPrice = candles.at(-1)?.close) {
+        if (!candles.length) {
+            return;
+        }
+
         const timeScale = this.chart.timeScale();
         const visibleRange = timeScale.getVisibleLogicalRange();
         const shouldFollowLatest = this.followLatest || !visibleRange;
-        const lastCandle = this.allCandles[this.allCandles.length - 1];
-        const previousLastIndex = this.allCandles.length - 1;
-        const isNewCandle = !lastCandle || candleData.time > lastCandle.time;
+        const previousLength = this.allCandles.length;
 
-        if (lastCandle && candleData.time === lastCandle.time) {
-            this.allCandles[this.allCandles.length - 1] = candleData;
-        } else if (isNewCandle) {
-            this.allCandles.push(candleData);
+        for (const candle of candles) {
+            const lastCandle = this.allCandles[this.allCandles.length - 1];
+            if (lastCandle && candle.time === lastCandle.time) {
+                this.allCandles[this.allCandles.length - 1] = candle;
+            } else if (!lastCandle || candle.time > lastCandle.time) {
+                this.allCandles.push(candle);
+            } else {
+                continue;
+            }
+
+            this.series.update(candle);
+            this.updateLatestSmaData();
         }
-        this.series.update(candleData);
-        this.updateLatestSmaData();
 
         this.applyCandleSize(this.currentCandleSize);
-        this.updateCurrentPrice(currentPrice);
+        if (currentPrice !== undefined) {
+            this.updateCurrentPrice(currentPrice);
+        }
 
         if (!visibleRange) {
             return;
         }
 
-        if (shouldFollowLatest && isNewCandle) {
-            const addedBars = this.allCandles.length - previousLastIndex - 1;
+        const addedBars = this.allCandles.length - previousLength;
+        if (shouldFollowLatest && addedBars > 0) {
             timeScale.setVisibleLogicalRange({
                 from: visibleRange.from + addedBars,
                 to: visibleRange.to + addedBars

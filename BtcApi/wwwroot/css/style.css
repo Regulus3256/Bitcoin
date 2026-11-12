@@ -263,11 +263,35 @@ h1 {
     display: none;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 .toolbar {
     display: flex;
+    align-items: center;
     gap: 10px;
     margin-bottom: 14px;
     flex-wrap: wrap;
+}
+
+.market-select-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #9fb5d5;
+    font-size: 0.75rem;
+}
+
+.market-select-label select {
+    min-height: 36px;
+    padding: 6px 26px 6px 10px;
+    border: 1px solid #2b3d5e;
+    border-radius: 6px;
+    background: #101c2b;
+    color: #edf6ff;
+    font: inherit;
+    font-weight: 600;
 }
 
 .timeframe-btn {
@@ -289,6 +313,192 @@ h1 {
     background: linear-gradient(135deg, #1f6feb, #7c3aed);
     border-color: transparent;
     box-shadow: 0 0 18px rgba(80, 125, 255, 0.45);
+}
+
+.replay-panel {
+    margin: 0 0 14px;
+    padding: 14px 16px;
+    border: 1px solid #263a52;
+    border-radius: 8px;
+    background: rgba(10, 19, 31, 0.92);
+}
+
+.replay-header,
+.replay-setup,
+.replay-controls,
+.replay-orders {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.replay-header {
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.replay-header h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 650;
+}
+
+.replay-coverage,
+.replay-orders > span {
+    color: #8fa9c8;
+    font-size: 0.76rem;
+}
+
+.replay-disclaimer {
+    margin: -3px 0 12px;
+    color: #7388a3;
+    font-size: 0.7rem;
+}
+
+.replay-setup label,
+.replay-controls label,
+.replay-orders label {
+    display: grid;
+    gap: 5px;
+    color: #9fb5d5;
+    font-size: 0.72rem;
+}
+
+.replay-setup input,
+.replay-setup select,
+.replay-controls select,
+.replay-orders input,
+.replay-orders select {
+    min-height: 34px;
+    min-width: 100px;
+    padding: 5px 8px;
+    border: 1px solid #30445e;
+    border-radius: 5px;
+    background: #101c2b;
+    color: #edf6ff;
+    font: inherit;
+}
+
+.replay-button {
+    min-height: 34px;
+    padding: 6px 12px;
+    border: 1px solid #344a64;
+    border-radius: 5px;
+    background: #17273a;
+    color: #e4effb;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.replay-button:hover:not(:disabled) {
+    filter: brightness(1.2);
+}
+
+.replay-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.replay-button.primary { background: #135461; border-color: #247887; }
+.replay-button.buy { background: #12634f; border-color: #248b6d; }
+.replay-button.sell { background: #723b42; border-color: #9b5259; }
+.replay-button.danger { margin-left: auto; }
+
+.replay-account {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(100px, 1fr));
+    gap: 8px;
+    margin: 12px 0;
+    padding: 10px 0;
+    border-top: 1px solid #24354a;
+    border-bottom: 1px solid #24354a;
+}
+
+.replay-account div {
+    display: grid;
+    gap: 4px;
+}
+
+.replay-account span {
+    color: #8fa9c8;
+    font-size: 0.68rem;
+}
+
+.replay-account strong {
+    color: #f0f6ff;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.replay-orders {
+    align-items: end;
+    margin-bottom: 10px;
+}
+
+.pending-orders {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.pending-order {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: 1px solid #344a64;
+    border-radius: 4px;
+    color: #c5d3e4;
+    font-size: 0.72rem;
+}
+
+.pending-order button {
+    border: 0;
+    background: transparent;
+    color: #f08a8a;
+    cursor: pointer;
+    font: inherit;
+}
+
+.trade-log-wrap {
+    max-height: 150px;
+    overflow: auto;
+    border-top: 1px solid #24354a;
+}
+
+.trade-log {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.trade-log th,
+.trade-log td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.trade-log th:first-child,
+.trade-log td:first-child,
+.trade-log th:nth-child(2),
+.trade-log td:nth-child(2) {
+    text-align: left;
+}
+
+.trade-log th {
+    position: sticky;
+    top: 0;
+    background: #0c1624;
+    color: #8fa9c8;
+    font-weight: 600;
 }
 
 .chart-layout {
@@ -375,4 +585,55 @@ h1 {
         width: min(100%, 250px);
         margin-left: auto;
     }
+
+    .replay-panel {
+        padding: 12px;
+    }
+
+    .replay-account {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .replay-button.danger {
+        margin-left: 0;
+    }
+}
+
+.demo-mode-button {
+    width: auto;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border: 1px solid #34775d;
+    border-radius: 7px;
+    background: #153a30;
+    color: #e8fff3;
+    font: inherit;
+    font-weight: 650;
+    font-size: 0.78rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.demo-mode-button:hover,
+.demo-mode-button[aria-pressed="true"] {
+    border-color: #52b989;
+    background: #1b5140;
+}
+
+.demo-mode-button span:first-child {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 5px;
+    background: rgba(99, 210, 156, 0.15);
+    color: #77e2ae;
+    font-size: 1.15rem;
+}
+
+.replay-panel[hidden] {
+    display: none;
 }
