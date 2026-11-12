@@ -1,6 +1,11 @@
 import { BtcApiClient } from './api.js';
 import { CandleAggregator } from './aggregator.js';
-import { CandleChartManager } from './chart.js';
+import { CandleChartManager } from './chart.js?v=20261112-sma-scroll';
+
+const replayPanel = document.getElementById('replay-panel');
+function elementById(id) {
+    return document.getElementById(id) ?? (id === replayPanel.id ? replayPanel : replayPanel.querySelector(`#${id}`));
+}
 
 const api = new BtcApiClient();
 const aggregators = {
@@ -12,6 +17,11 @@ const aggregators = {
 };
 const chartManager = new CandleChartManager('chart', document.getElementById('candle-detail'));
 const statusEl = document.getElementById('status');
+const replayStatusEl = elementById('replay-message');
+if (replayStatusEl) {
+    new MutationObserver(() => { replayStatusEl.textContent = statusEl.textContent; })
+        .observe(statusEl, { childList: true, characterData: true, subtree: true });
+}
 const timeframeButtons = [...document.querySelectorAll('.timeframe-btn')];
 const toolsToggle = document.getElementById('tools-toggle');
 const toolsDialog = document.getElementById('tools-dialog');
@@ -20,6 +30,7 @@ const demoModeButton = document.getElementById('demo-mode-toggle');
 const instrumentSelect = document.getElementById('market-symbol-select');
 const initialVisibleCandles = 250;
 const smaWarmupCandles = 199;
+const olderHistoryPageSize = 120;
 const demoStorageKey = 'btc-demo-session-v1';
 const demoFeeRate = 0.001;
 const replayPageSize = 10000;
@@ -34,6 +45,9 @@ let replayTimer = null;
 let replaySaveTimer = null;
 let replayLastTick = 0;
 let replayAccumulator = 0;
+let replayAdvancing = false;
+let replayPlaybackGeneration = 0;
+let replayHistoryExhausted = false;
 let realRangeBeforeReplay = '1h';
 let currentSymbol = 'BTC';
 let currentInstrument = null;
@@ -52,15 +66,20 @@ const replayIntervals = {
 
 async function loadOlderHistory() {
     const oldestTime = chartManager.getOldestTime();
-    if (!oldestTime) {
+    if (oldestTime == null) {
         return;
     }
 
     try {
-        const olderCandles = await api.fetchHistoricalCandles(currentRange, oldestTime - 1, 120, null, null, currentSymbol);
-        if (olderCandles.length > 0) {
-            chartManager.prependCandles(olderCandles);
-        }
+        const range = currentRange;
+        const symbol = currentSymbol;
+        const session = replaySession;
+        const olderCandles = await api.fetchHistoricalCandles(
+            range, oldestTime, olderHistoryPageSize + smaWarmupCandles, null, null, symbol);
+        if (range !== currentRange || symbol !== currentSymbol || session !== replaySession || oldestTime !== chartManager.getOldestTime()) return;
+
+        const visibleStart = Math.max(0, olderCandles.length - olderHistoryPageSize);
+        chartManager.prependCandles(olderCandles.slice(visibleStart), olderCandles.slice(0, visibleStart));
     } catch (err) {
         console.error('Older history load error:', err);
     }
@@ -75,7 +94,8 @@ async function loadHistory(range = currentRange) {
         }
 
         if (candles.length > 0) {
-            chartManager.setCandles(candles);
+            const visibleStart = Math.max(0, candles.length - initialVisibleCandles);
+            chartManager.setCandles(candles.slice(visibleStart), true, candles.slice(0, visibleStart));
             chartManager.setLoadMoreHandler(loadOlderHistory);
             const latest = candles[candles.length - 1];
             aggregators[range].seed(latest);
@@ -95,17 +115,17 @@ async function loadHistory(range = currentRange) {
     }
 }
 
-async function loadReplayCandles(from, through, symbol = currentSymbol) {
+async function loadReplayCandles(from, minimumCount, symbol = currentSymbol) {
     const candles = [];
     let cursor = from;
 
-    while (cursor < through) {
-        const page = await api.fetchHistoricalCandles('1m', null, replayPageSize, cursor, through, symbol);
+    while (candles.length < minimumCount) {
+        const page = await api.fetchHistoricalCandles('1m', null, replayPageSize, cursor, null, symbol);
         if (page.length === 0) {
             break;
         }
 
-        const validPage = page.filter(candle => candle.time >= cursor && candle.time < through);
+        const validPage = page.filter(candle => candle.time >= cursor);
         candles.push(...validPage);
         const lastTime = validPage.at(-1)?.time;
         if (lastTime === undefined || validPage.length < replayPageSize) {
@@ -207,7 +227,7 @@ function setReplayStatus(message = '') {
     const candle = currentReplayCandle();
     if (candle) {
         const replayTime = new Date((candle.time + 60) * 1000);
-        document.getElementById('replay-clock').textContent = `${replayTime.toISOString().replace('T', ' ').slice(0, 16)} UTC`;
+        elementById('replay-clock').textContent = `${replayTime.toISOString().replace('T', ' ').slice(0, 16)} UTC`;
     }
 
     const price = candle?.close ?? 0;
@@ -217,24 +237,23 @@ function setReplayStatus(message = '') {
         ? baseQuantity * price - replaySession.costBasis
         : 0;
 
-    document.getElementById('account-cash').textContent = formatQuote(replaySession.cash);
-    document.getElementById('account-base-asset').textContent = currentInstrument?.baseAsset ?? replaySession.symbol;
-    document.getElementById('account-btc').textContent = baseQuantity.toFixed(8);
-    document.getElementById('account-equity').textContent = formatQuote(equity);
-    document.getElementById('account-realized').textContent = formatQuote(replaySession.realizedPnl);
-    document.getElementById('account-unrealized').textContent = formatQuote(unrealized);
-    document.getElementById('order-submit').disabled = !candle;
-    document.getElementById('replay-step').textContent = `${replayRange === '1m' ? '1分足' : replayRange === '1h' ? '1時間足' : replayRange === '4h' ? '4時間足' : replayRange === '1d' ? '1日足' : '1週足'}進める`;
+    elementById('account-cash').textContent = formatQuote(replaySession.cash);
+    elementById('account-base-asset').textContent = currentInstrument?.baseAsset ?? replaySession.symbol;
+    elementById('account-btc').textContent = baseQuantity.toFixed(8);
+    elementById('account-equity').textContent = formatQuote(equity);
+    elementById('account-realized').textContent = formatQuote(replaySession.realizedPnl);
+    elementById('account-unrealized').textContent = formatQuote(unrealized);
+    elementById('order-submit').disabled = !candle;
 
     if (message) {
         statusEl.textContent = message;
-    } else if (replaySession.cursorIndex >= replayCandles.length - 1) {
-        statusEl.textContent = 'セッション終了時刻です。取引履歴を確認できます';
+    } else if (replayHistoryExhausted && replaySession.cursorIndex >= replayCandles.length - 1) {
+        statusEl.textContent = '利用可能な最新の履歴に到達しました';
         pauseReplay();
     } else if (replaySession.gapCount > 0) {
-        statusEl.textContent = `デモ再生中 ${replaySession.cursorIndex + 1}/${replayCandles.length} | ${currentInstrument?.baseAsset}/${currentInstrument?.quoteAsset} ${formatQuote(price)} | 欠損 ${replaySession.gapCount}区間`;
+        statusEl.textContent = `デモ再生中 | ${currentInstrument?.baseAsset}/${currentInstrument?.quoteAsset} ${formatQuote(price)} | 欠損 ${replaySession.gapCount}区間`;
     } else {
-        statusEl.textContent = `デモ再生中 ${replaySession.cursorIndex + 1}/${replayCandles.length} | ${currentInstrument?.baseAsset}/${currentInstrument?.quoteAsset} ${formatQuote(price)} | 手数料 ${(demoFeeRate * 100).toFixed(2)}%`;
+        statusEl.textContent = `デモ再生中 | ${currentInstrument?.baseAsset}/${currentInstrument?.quoteAsset} ${formatQuote(price)} | 手数料 ${(demoFeeRate * 100).toFixed(2)}%`;
     }
 
     renderTradeLog();
@@ -242,7 +261,7 @@ function setReplayStatus(message = '') {
 }
 
 function renderTradeLog() {
-    const tableBody = document.getElementById('trade-log-body');
+    const tableBody = elementById('trade-log-body');
     const trades = replaySession?.trades ?? [];
     if (!trades.length) {
         tableBody.innerHTML = '<tr><td colspan="7">取引履歴はありません</td></tr>';
@@ -262,7 +281,7 @@ function renderTradeLog() {
 }
 
 function renderPendingOrders() {
-    const container = document.getElementById('pending-orders');
+    const container = elementById('pending-orders');
     const orders = replaySession?.pendingOrders ?? [];
     container.innerHTML = orders.map(order => {
         const amount = order.side === 'buy'
@@ -281,11 +300,11 @@ function updateTimeframeControlsForReplay(isReplay) {
 }
 
 function showReplaySession() {
-    document.getElementById('replay-setup').hidden = true;
-    document.getElementById('replay-session').hidden = false;
-    chartManager.setLoadMoreHandler(null);
+    elementById('replay-setup').hidden = true;
+    elementById('replay-session').hidden = false;
     currentRange = replayRange;
     rebuildReplayChart();
+    chartManager.setLoadMoreHandler(loadOlderHistory);
     updateTimeframeControlsForReplay(true);
     setReplayStatus();
 }
@@ -294,18 +313,17 @@ async function beginReplaySession(session = null) {
     pauseReplay();
     realSymbolBeforeReplay = currentSymbol;
     realRangeBeforeReplay = currentRange;
-    const startTime = session?.startTime ?? Math.floor(new Date(`${document.getElementById('replay-date').value}T00:00:00Z`).getTime() / 1000);
-    const durationDays = session?.durationDays ?? Number(document.getElementById('replay-days').value);
-    const endTime = session?.endTime ?? startTime + durationDays * 86400;
+    const startTime = session?.startTime ?? Math.floor(new Date(`${elementById('replay-date').value}T00:00:00Z`).getTime() / 1000);
 
-    statusEl.textContent = '指定期間の1分足をDBから読み込んでいます...';
+    statusEl.textContent = '開始日からの1分足をDBから読み込んでいます...';
     const symbol = session?.symbol ?? currentSymbol;
-    const candles = await loadReplayCandles(startTime, endTime, symbol);
+    const candles = await loadReplayCandles(startTime, Math.max(replayPageSize, (session?.cursorIndex ?? 0) + 1), symbol);
     if (candles.length === 0) {
-        throw new Error('選択期間の履歴がまだDBにありません。取込完了後に再試行してください。');
+        throw new Error('開始日以降の履歴がDBにありません。取込完了後に再試行してください。');
     }
 
     replayCandles = candles;
+    replayHistoryExhausted = false;
     const selectedReplayRange = session?.range ?? currentRange;
     const historyContext = await loadReplayHistoryContext(selectedReplayRange, startTime, symbol);
     replayContextCandles = historyContext.visible;
@@ -315,11 +333,9 @@ async function beginReplaySession(session = null) {
         version: 1,
         symbol,
         startTime,
-        endTime,
-        durationDays,
         cursorIndex: 0,
-        initialCash: Number(document.getElementById('replay-capital').value),
-        cash: Number(document.getElementById('replay-capital').value),
+        initialCash: Number(elementById('replay-capital').value),
+        cash: Number(elementById('replay-capital').value),
         baseQuantity: 0,
         costBasis: 0,
         realizedPnl: 0,
@@ -330,6 +346,8 @@ async function beginReplaySession(session = null) {
     };
 
     replaySession.cursorIndex = Math.min(replaySession.cursorIndex ?? 0, candles.length - 1);
+    delete replaySession.endTime;
+    delete replaySession.durationDays;
     replaySession.pendingOrders ??= [];
     replaySession.baseQuantity ??= replaySession.btc ?? 0;
     delete replaySession.btc;
@@ -341,12 +359,12 @@ async function beginReplaySession(session = null) {
     document.getElementById('chart-title').textContent = `${currentInstrument.baseAsset}/${currentInstrument.quoteAsset} Realtime Candlestick Chart`;
     replayRange = replaySession.range ?? currentRange;
     replaySession.range = replayRange;
-    document.getElementById('replay-quote-asset').textContent = currentInstrument.quoteAsset;
-    document.getElementById('replay-price-asset').textContent = currentInstrument.quoteAsset;
-    document.getElementById('replay-capital-label').firstChild.textContent = `初期資金 ${currentInstrument.quoteAsset}`;
-    document.getElementById('replay-disclaimer').textContent =
+    elementById('replay-quote-asset').textContent = currentInstrument.quoteAsset;
+    elementById('replay-price-asset').textContent = currentInstrument.quoteAsset;
+    elementById('replay-capital-label').firstChild.textContent = `初期資金 ${currentInstrument.quoteAsset}`;
+    elementById('replay-disclaimer').textContent =
         `デモ専用。過去価格は${currentInstrument.archiveSymbol}を${currentInstrument.quoteAsset}の近似として使用し、手数料を含むシミュレーション約定です。`;
-    document.getElementById('replay-speed').value = String(replaySession.speed ?? 1);
+    elementById('replay-speed').value = String(replaySession.speed ?? 1);
     syncOrderForm();
     showReplaySession();
     saveReplaySession(true);
@@ -388,35 +406,84 @@ function advanceReplay(count = 1) {
     saveReplaySession();
 }
 
+async function advanceReplayBars(count, playbackGeneration) {
+    if (!replaySession) return;
+
+    const session = replaySession;
+    const interval = replayIntervals[replayRange];
+    const currentTime = currentReplayCandle().time + 60;
+    const targetTime = Math.floor(currentTime / interval) * interval + interval * count;
+    while (replayCandles.at(-1).time < targetTime - 60) {
+        const cursor = replayCandles.at(-1).time + 60;
+        const page = await api.fetchHistoricalCandles('1m', null, replayPageSize, cursor, null, session.symbol);
+        if (replaySession !== session || replayPlaybackGeneration !== playbackGeneration) return;
+        const nextCandles = page.filter(candle => candle.time >= cursor);
+        if (nextCandles.length === 0) {
+            replayHistoryExhausted = true;
+            break;
+        }
+        const previous = replayCandles.at(-1);
+        session.gapCount += nextCandles.reduce((count, candle, index) => {
+            const preceding = index === 0 ? previous : nextCandles[index - 1];
+            return count + (candle.time - preceding.time > 60 ? 1 : 0);
+        }, 0);
+        replayCandles.push(...nextCandles);
+    }
+    if (replaySession !== session || replayPlaybackGeneration !== playbackGeneration) return;
+    let targetIndex = replaySession.cursorIndex;
+    while (targetIndex + 1 < replayCandles.length && replayCandles[targetIndex + 1].time < targetTime) {
+        targetIndex += 1;
+    }
+    if (targetIndex === replaySession.cursorIndex && targetIndex < replayCandles.length - 1) {
+        targetIndex += 1;
+    }
+    if (targetIndex === replaySession.cursorIndex) {
+        setReplayStatus();
+        return;
+    }
+    advanceReplay(targetIndex - replaySession.cursorIndex);
+}
+
 function playReplay() {
     if (!replaySession || replayTimer !== null) {
         return;
     }
 
-    const speed = Number(document.getElementById('replay-speed').value);
+    const speed = Number(elementById('replay-speed').value);
     replaySession.speed = speed;
-    document.getElementById('replay-play').textContent = '一時停止';
+    elementById('replay-play').textContent = '一時停止';
+    replayHistoryExhausted = false;
+    const playbackGeneration = ++replayPlaybackGeneration;
     replayLastTick = performance.now();
     replayAccumulator = 0;
     replayTimer = window.setInterval(() => {
         const now = performance.now();
-        replayAccumulator += ((now - replayLastTick) / 1000) * Number(document.getElementById('replay-speed').value);
+        replayAccumulator += ((now - replayLastTick) / 1000) * Number(elementById('replay-speed').value);
         replayLastTick = now;
-        const candlesToAdvance = Math.floor(replayAccumulator);
-        if (candlesToAdvance > 0) {
-            replayAccumulator -= candlesToAdvance;
-            advanceReplay(candlesToAdvance);
+        const barsToAdvance = Math.floor(replayAccumulator);
+        if (barsToAdvance > 0 && !replayAdvancing) {
+            replayAccumulator -= barsToAdvance;
+            replayAdvancing = true;
+            advanceReplayBars(barsToAdvance, playbackGeneration)
+                .catch(error => {
+                    if (replayPlaybackGeneration === playbackGeneration) {
+                        pauseReplay();
+                        statusEl.textContent = `履歴データを読み込めません: ${error.message}`;
+                    }
+                })
+                .finally(() => { replayAdvancing = false; });
         }
     }, 50);
     saveReplaySession(true);
 }
 
 function pauseReplay() {
+    replayPlaybackGeneration += 1;
     if (replayTimer !== null) {
         window.clearInterval(replayTimer);
         replayTimer = null;
     }
-    const playButton = document.getElementById('replay-play');
+    const playButton = elementById('replay-play');
     if (playButton) {
         playButton.textContent = '再生';
     }
@@ -458,10 +525,10 @@ function executeSell(quantity, price, time, orderType = 'market') {
 function placeOrder() {
     if (!replaySession) return;
     const candle = currentReplayCandle();
-    const side = document.getElementById('order-side').value;
-    const type = document.getElementById('order-type').value;
-    const amount = Number(document.getElementById('order-amount').value);
-    const limitPrice = Number(document.getElementById('order-limit-price').value);
+    const side = elementById('order-side').value;
+    const type = elementById('order-type').value;
+    const amount = Number(elementById('order-amount').value);
+    const limitPrice = Number(elementById('order-limit-price').value);
     if (!candle || !Number.isFinite(amount) || amount <= 0) return;
 
     if (side === 'buy') {
@@ -524,25 +591,25 @@ function fillLimitOrders(candle, candleIndex) {
 }
 
 function syncOrderForm() {
-    const side = document.getElementById('order-side').value;
-    const type = document.getElementById('order-type').value;
-    const amountLabel = document.getElementById('order-amount-label');
-    const amountAsset = document.getElementById('replay-quote-asset');
-    const submit = document.getElementById('order-submit');
+    const side = elementById('order-side').value;
+    const type = elementById('order-type').value;
+    const amountLabel = elementById('order-amount-label');
+    const amountAsset = elementById('replay-quote-asset');
+    const submit = elementById('order-submit');
     const isBuy = side === 'buy';
     amountLabel.textContent = isBuy ? '注文額' : '注文数量';
     amountAsset.textContent = isBuy
         ? currentInstrument?.quoteAsset ?? 'USD'
         : currentInstrument?.baseAsset ?? replaySession?.symbol ?? 'BTC';
-    document.getElementById('order-limit-price-wrap').hidden = type !== 'limit';
+    elementById('order-limit-price-wrap').hidden = type !== 'limit';
     submit.textContent = `${type === 'limit' ? '指値' : '成行'}${isBuy ? '買い' : '売り'}`;
     submit.classList.toggle('buy', isBuy);
     submit.classList.toggle('sell', !isBuy);
 }
 
 function handleOrderSideChange() {
-    const amountInput = document.getElementById('order-amount');
-    if (document.getElementById('order-side').value === 'sell') {
+    const amountInput = elementById('order-amount');
+    if (elementById('order-side').value === 'sell') {
         const reservedQuantity = replaySession?.pendingOrders.filter(order => order.side === 'sell').reduce((sum, order) => sum + order.amount, 0) ?? 0;
         amountInput.value = Math.max(0, (replaySession?.baseQuantity ?? 0) - reservedQuantity).toFixed(8);
     } else {
@@ -559,72 +626,70 @@ function cancelPendingOrder(orderId) {
 }
 
 async function refreshReplayCoverage() {
-    const dateInput = document.getElementById('replay-date');
+    const dateInput = elementById('replay-date');
     try {
         const coverage = await api.fetchHistoryCoverage(currentSymbol);
         if (coverage.oldestTime != null && coverage.newestTime != null) {
-            document.getElementById('replay-coverage').textContent =
+            elementById('replay-coverage').textContent =
                 `${new Date(coverage.oldestTime * 1000).toISOString().slice(0, 10)} 〜 ${new Date(coverage.newestTime * 1000).toISOString().slice(0, 10)} | ${Number(coverage.candleCount).toLocaleString()}本`;
             dateInput.min = new Date(coverage.oldestTime * 1000).toISOString().slice(0, 10);
             dateInput.max = new Date(coverage.newestTime * 1000).toISOString().slice(0, 10);
         } else {
-            document.getElementById('replay-coverage').textContent = '過去データを取り込み中です';
+            elementById('replay-coverage').textContent = '過去データを取り込み中です';
         }
     } catch (err) {
-        document.getElementById('replay-coverage').textContent = `DB状態を確認できません: ${err.message}`;
+        elementById('replay-coverage').textContent = `DB状態を確認できません: ${err.message}`;
     }
 }
 
 function bindReplayControls() {
-    document.getElementById('replay-start').addEventListener('click', async () => {
+    elementById('replay-start').addEventListener('click', async () => {
         try {
             await beginReplaySession();
         } catch (err) {
             statusEl.textContent = err.message;
         }
     });
-    document.getElementById('replay-resume').addEventListener('click', async () => {
+    elementById('replay-resume').addEventListener('click', async () => {
         const saved = localStorage.getItem(demoStorageKey);
         if (!saved) return;
         try {
             await beginReplaySession(JSON.parse(saved));
-            document.getElementById('replay-resume').hidden = true;
+            elementById('replay-resume').hidden = true;
         } catch (err) {
             statusEl.textContent = `履歴データの準備待ちです: ${err.message}`;
         }
     });
-    document.getElementById('replay-play').addEventListener('click', () => replayTimer === null ? playReplay() : pauseReplay());
-    document.getElementById('replay-step').addEventListener('click', () => {
-        advanceReplay(replayIntervals[replayRange] / 60);
-    });
-    document.getElementById('replay-speed').addEventListener('change', () => {
+    elementById('replay-play').addEventListener('click', () => replayTimer === null ? playReplay() : pauseReplay());
+    elementById('replay-speed').addEventListener('change', () => {
         if (replayTimer !== null) {
             pauseReplay();
             playReplay();
         }
     });
-    document.getElementById('order-submit').addEventListener('click', placeOrder);
-    document.getElementById('order-side').addEventListener('change', handleOrderSideChange);
-    document.getElementById('order-type').addEventListener('change', syncOrderForm);
-    document.getElementById('pending-orders').addEventListener('click', event => {
+    elementById('order-submit').addEventListener('click', placeOrder);
+    elementById('order-side').addEventListener('change', handleOrderSideChange);
+    elementById('order-type').addEventListener('change', syncOrderForm);
+    elementById('pending-orders').addEventListener('click', event => {
         const cancelButton = event.target.closest('[data-cancel-order]');
         if (cancelButton) cancelPendingOrder(cancelButton.dataset.cancelOrder);
     });
-    document.getElementById('replay-reset').addEventListener('click', () => {
+    elementById('replay-reset').addEventListener('click', () => {
         pauseReplay();
         replaySession = null;
         replayCandles = [];
         saveReplaySession(true);
-        document.getElementById('replay-session').hidden = true;
-        document.getElementById('replay-setup').hidden = false;
-        document.getElementById('replay-panel').hidden = true;
+        elementById('replay-session').hidden = true;
+        elementById('replay-setup').hidden = false;
+        elementById('replay-panel').hidden = true;
+        document.querySelector('.chart-layout').classList.remove('replay-inline');
         demoModeButton.setAttribute('aria-pressed', 'false');
         currentSymbol = realSymbolBeforeReplay;
         instrumentSelect.value = currentSymbol;
         currentInstrument = JSON.parse(instrumentSelect.selectedOptions[0].dataset.instrument);
         document.getElementById('chart-title').textContent = `${currentInstrument.baseAsset}/${currentInstrument.quoteAsset} Realtime Candlestick Chart`;
-        document.getElementById('replay-quote-asset').textContent = currentInstrument.quoteAsset;
-        document.getElementById('replay-price-asset').textContent = currentInstrument.quoteAsset;
+        elementById('replay-quote-asset').textContent = currentInstrument.quoteAsset;
+        elementById('replay-price-asset').textContent = currentInstrument.quoteAsset;
         currentRange = realRangeBeforeReplay;
         updateTimeframeControlsForReplay(false);
         void refreshReplayCoverage();
@@ -659,19 +724,23 @@ async function initializeInstrumentSelector() {
         await loadHistory(currentRange);
     });
 
-    document.getElementById('demo-mode-toggle').addEventListener('click', () => {
-        document.getElementById('replay-panel').hidden = false;
-        demoModeButton.setAttribute('aria-pressed', 'true');
-        toolsDialog.close();
-        void refreshReplayCoverage();
-        document.getElementById('replay-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    demoModeButton.addEventListener('click', toggleReplayPanel);
 
     return instruments;
 }
 
+function toggleReplayPanel() {
+    const chartLayout = document.querySelector('.chart-layout');
+    const isOpen = replayPanel.hidden;
+    if (isOpen) chartLayout.prepend(replayPanel);
+    replayPanel.hidden = !isOpen;
+    chartLayout.classList.toggle('replay-inline', isOpen);
+    demoModeButton.setAttribute('aria-pressed', String(isOpen));
+    if (isOpen) void refreshReplayCoverage();
+}
+
 async function initializeReplayPanel() {
-    const dateInput = document.getElementById('replay-date');
+    const dateInput = elementById('replay-date');
     const today = new Date();
     today.setUTCDate(today.getUTCDate() - 7);
     dateInput.value = today.toISOString().slice(0, 10);
@@ -679,7 +748,7 @@ async function initializeReplayPanel() {
     await refreshReplayCoverage();
     const saved = localStorage.getItem(demoStorageKey);
     if (saved) {
-        document.getElementById('replay-resume').hidden = false;
+        elementById('replay-resume').hidden = false;
     }
 
     bindReplayControls();

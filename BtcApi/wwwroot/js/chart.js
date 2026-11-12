@@ -398,7 +398,7 @@ export class CandleChartManager {
         return this.allCandles.length > 0 ? this.allCandles[0].time : null;
     }
 
-    prependCandles(candles) {
+    prependCandles(candles, smaWarmupCandles = []) {
         if (!candles.length) {
             return;
         }
@@ -410,7 +410,8 @@ export class CandleChartManager {
         }
 
         const merged = [...uniqueCandles, ...this.allCandles];
-        this.setCandles(merged, false);
+        const warmup = smaWarmupCandles.filter(candle => candle.time < uniqueCandles[0].time);
+        this.setCandles(merged, false, warmup);
 
         if (visibleRange) {
             this.chart.timeScale().setVisibleLogicalRange({

@@ -6,7 +6,7 @@
     <!-- 外部ライブラリ -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <!-- 自作CSS -->
-    <link rel="stylesheet" href="css/style.css?v=20261111-demo-orders">
+    <link rel="stylesheet" href="css/style.css?v=20261112-sma-scroll">
 </head>
 <body>
     <header class="page-header">
@@ -69,16 +69,9 @@
             <div class="replay-coverage" id="replay-coverage">履歴データを確認中...</div>
         </div>
         <p class="replay-disclaimer" id="replay-disclaimer">デモ専用。過去価格はBTC/USDTをUSDの近似として使用し、手数料を含むシミュレーション約定です。</p>
+        <div id="replay-message" class="replay-message" role="status" aria-live="polite"></div>
         <div class="replay-setup" id="replay-setup">
             <label>開始日<input id="replay-date" type="date"></label>
-            <label>再生期間
-                <select id="replay-days">
-                    <option value="1">1日</option>
-                    <option value="3">3日</option>
-                    <option value="7" selected>7日</option>
-                    <option value="30">30日</option>
-                </select>
-            </label>
             <label id="replay-capital-label">初期資金 USD<input id="replay-capital" type="number" min="100" step="100" value="10000"></label>
             <button id="replay-start" class="replay-button primary" type="button">セッション開始</button>
             <button id="replay-resume" class="replay-button" type="button" hidden>前回のセッションを復元</button>
@@ -86,7 +79,6 @@
         <div class="replay-session" id="replay-session" hidden>
             <div class="replay-controls">
                 <button id="replay-play" class="replay-button primary" type="button">再生</button>
-                <button id="replay-step" class="replay-button" type="button">1時間足進める</button>
                 <label>速度
                     <select id="replay-speed">
                         <option value="1">1x</option>
@@ -128,6 +120,6 @@
     </div>
     <div id="status" class="status">Connecting...</div>
 
-    <script type="module" src="js/main.js?v=20261111-demo-orders"></script>
+    <script type="module" src="js/main.js?v=20261112-sma-scroll"></script>
 </body>
 </html>

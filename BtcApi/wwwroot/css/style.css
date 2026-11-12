@@ -357,6 +357,13 @@ h1 {
     font-size: 0.7rem;
 }
 
+.replay-message {
+    margin-bottom: 12px;
+    color: #9ec6ff;
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
 .replay-setup label,
 .replay-controls label,
 .replay-orders label {
@@ -506,6 +513,33 @@ h1 {
     gap: 16px;
     align-items: stretch;
     position: relative;
+}
+
+.chart-layout.replay-inline .replay-panel {
+    box-sizing: border-box;
+    flex: 0 0 min(420px, 42%);
+    max-height: 520px;
+    margin: 0;
+    overflow: auto;
+}
+
+.chart-layout.replay-inline .replay-account {
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+}
+
+.chart-layout.replay-inline #chart {
+    min-width: 0;
+}
+
+@media (max-width: 800px) {
+    .chart-layout.replay-inline {
+        flex-direction: column;
+    }
+
+    .chart-layout.replay-inline .replay-panel {
+        flex-basis: auto;
+        max-height: none;
+    }
 }
 
 #chart {
