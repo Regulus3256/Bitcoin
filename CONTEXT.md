@@ -56,11 +56,12 @@
 - `BtcApi/BtcApi.csproj` — .NET 9 Webプロジェクト定義とデモHTMLの出力・発行設定; `Microsoft.AspNetCore.OpenApi`, `Npgsql`。
 - `BtcApi/BtcApi.http` — ローカルHTTPリクエスト例; `GET /weatherforecast/`; `http://localhost:5081`。
 - `BtcApi/Dockerfile` — .NET 9 APIのビルド・実行イメージ; SDK/ASP.NET runtime、`PORT`。
-- `BtcApi/appsettings.json` — `ConnectionStrings:MarketData`, `HistoricalData:StartDate`, Logging, `AllowedHosts`の設定。
+- `BtcApi/.dockerignore` — Dockerビルド対象から生成物とローカル開発設定を除外; `appsettings.Development.json`。
+- `BtcApi/appsettings.json` — `HistoricalData:StartDate`, Logging, `AllowedHosts`の設定。
 - `BtcApi/Properties/AssemblyInfo.cs` — テスト用内部可視化; `InternalsVisibleTo("BtcApi.Tests")`; I/O: なし。
 - `BtcApi/Properties/launchSettings.json` — HTTP/HTTPS開発プロファイル; `http://localhost:5081`, `https://localhost:7206`; `ASPNETCORE_ENVIRONMENT`。
-- `docker-compose.yml` — `api`と`db`の起動設定; `ConnectionStrings__MarketData`, `HistoricalData__StartDate`, PostgreSQL volume `pgdata`。
-- `docs/DEMO_TRADING.md` — デモ取引、Basic認証、CLIユーザー作成、履歴データ運用を記載; Docker Compose、`/demo`。
+- `docker-compose.yml` — `api`と`db`の起動設定; `.env`の`POSTGRES_PASSWORD`, `ConnectionStrings__MarketData`, `HistoricalData__StartDate`, PostgreSQL volume `pgdata`。
+- `docs/DEMO_TRADING.md` — デモ取引、Basic認証、DB接続設定、履歴データ運用を記載; Docker Compose、Render、`/demo`。
 - `docs/DB_STRUCTURE.html` — PostgreSQLテーブル構成図; `btc_candles`, `candle_import_months`, `candle_import_days`, `demo_users`; 接続・取込設定。
 
 ## Tests

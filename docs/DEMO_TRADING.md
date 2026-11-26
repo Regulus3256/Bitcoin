@@ -14,6 +14,14 @@
 
 ワークスペースのルートで実行します。
 
+初回はルートにGit管理されない`.env`を作成し、次の形式でローカルDB用パスワードを設定してください。
+
+```text
+POSTGRES_PASSWORD=任意の強いパスワード
+```
+
+既存のDBボリュームを使う場合は、既存のPostgreSQLパスワードを設定してください。`.env`だけを変更しても既存DBのパスワードは変更されません。Dockerを使わず開発する場合は、`BtcApi/appsettings.Development.json`の`ConnectionStrings:MarketData`に接続文字列を設定します。
+
 ```powershell
 docker compose up --build -d
 docker compose logs -f api
@@ -42,6 +50,6 @@ ComposeのPostgreSQLデータは名前付きボリューム`pgdata`に保存さ�
 
 ## 無料公開環境の注意
 
-ローカルDockerのPostgreSQLは無料で使えますが、PCの稼働とディスク容量に依存します。Renderへ公開する場合は、APIコンテナとは別にPostgreSQLサービスを作成し、`ConnectionStrings__MarketData`へ接続文字列を設定してください。Renderの無料DBは保存期間などの制約が変わる場合があるため、数年分を長期間保持する用途では、期限・容量を確認し、必要なら自前サーバー上のDockerボリュームを使ってください。
+ローカルDockerのPostgreSQLは無料で使えますが、PCの稼働とディスク容量に依存します。Renderへ公開する場合は、APIコンテナとは別にPostgreSQLサービスを作成し、Web Serviceの環境変数`ConnectionStrings__MarketData`に`Host=...;Port=5432;Database=...;Username=...;Password=...`形式の接続文字列を設定してください。接続情報はGitへ保存しないでください。Renderの無料DBは保存期間などの制約が変わる場合があるため、数年分を長期間保持する用途では、期限・容量を確認し、必要なら自前サーバー上のDockerボリュームを使ってください。
 
-Compose内のPostgreSQL認証情報はローカル開発用です。公開環境では必ず独自の強いパスワードと接続文字列を設定してください。
+公開環境では必ずローカルとは別の強いパスワードと接続文字列を設定してください。
