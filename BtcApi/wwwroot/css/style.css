@@ -553,6 +553,35 @@ h1 {
     background: #0b1220;
 }
 
+.chart-context-menu {
+    position: absolute;
+    z-index: 20;
+    min-width: 180px;
+    padding: 4px;
+    border: 1px solid #405572;
+    border-radius: 6px;
+    background: #101c2b;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.chart-context-menu button {
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #edf6ff;
+    font: inherit;
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.chart-context-menu button:hover,
+.chart-context-menu button:focus-visible {
+    background: #25415a;
+}
+
 .candle-detail {
     flex: 0 0 auto;
     width: 210px;
@@ -649,6 +678,7 @@ h1 {
     font-size: 0.78rem;
     text-align: left;
     cursor: pointer;
+    text-decoration: none;
 }
 
 .demo-mode-button:hover,

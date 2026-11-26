@@ -73,10 +73,58 @@ export class CandleChartManager {
 
         this.bindCrosshair();
         this.bindDrawingClick();
+        this.bindContextMenu();
         this.bindVisibleRange();
         this.applyCandleSize(this.currentCandleSize);
-        this.resizeObserver = new ResizeObserver(() => this.positionFibHandles());
+        this.resizeObserver = new ResizeObserver(() => {
+            this.chart.resize(this.container.clientWidth, this.container.clientHeight);
+            this.positionFibHandles();
+        });
         this.resizeObserver.observe(this.container);
+    }
+
+    setContextMenuHandler(handler) {
+        this.contextMenuHandler = handler;
+    }
+
+    bindContextMenu() {
+        const menu = document.createElement('div');
+        menu.className = 'chart-context-menu';
+        menu.hidden = true;
+        menu.setAttribute('role', 'menu');
+        const startButton = document.createElement('button');
+        startButton.type = 'button';
+        startButton.setAttribute('role', 'menuitem');
+        startButton.textContent = 'この足からデモを開始';
+        menu.append(startButton);
+        this.container.append(menu);
+
+        let selectedTime = null;
+        this.container.addEventListener('contextmenu', event => {
+            const rect = this.container.getBoundingClientRect();
+            const coordinate = event.clientX - rect.left;
+            const time = this.chart.timeScale().coordinateToTime(coordinate);
+            if (typeof time !== 'number' || !this.allCandles.some(candle => candle.time === time)) {
+                menu.hidden = true;
+                return;
+            }
+            event.preventDefault();
+            selectedTime = time;
+            menu.hidden = false;
+            menu.style.left = `${Math.max(0, Math.min(coordinate, this.container.clientWidth - menu.offsetWidth))}px`;
+            menu.style.top = `${Math.max(0, Math.min(event.clientY - rect.top, this.container.clientHeight - menu.offsetHeight))}px`;
+            startButton.focus();
+        });
+        startButton.addEventListener('click', () => {
+            menu.hidden = true;
+            if (selectedTime !== null) this.contextMenuHandler?.(selectedTime);
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!menu.contains(event.target)) menu.hidden = true;
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') menu.hidden = true;
+        });
     }
 
     bindCrosshair() {

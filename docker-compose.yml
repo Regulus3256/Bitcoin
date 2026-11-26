@@ -7,7 +7,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ConnectionStrings__MarketData=Host=db;Port=5432;Database=btcdb;Username=postgres;Password=mysecretpassword
+      - ConnectionStrings__MarketData=Host=db;Port=5432;Database=btcdb;Username=postgres;Password=NiV9eK6AJPf2okDR5dtcxGTjv6kRFm1b
       - HistoricalData__StartDate=2023-01-01
     depends_on:
       db:
@@ -19,7 +19,7 @@ services:
     environment:
       POSTGRES_DB: btcdb
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_PASSWORD: NiV9eK6AJPf2okDR5dtcxGTjv6kRFm1b
     ports:
       - "5432:5432"
     volumes:

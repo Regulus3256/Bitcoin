@@ -1,9 +1,13 @@
 using BtcApi.Application.Abstractions;
 using BtcApi.Application.Services;
+using BtcApi.Endpoints;
+using BtcApi.Infrastructure.Authentication;
 using BtcApi.Infrastructure.HistoricalData;
 using BtcApi.Infrastructure.Kraken;
 using BtcApi.Infrastructure.Persistence;
 using BtcApi.Infrastructure.Streaming;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Identity;
 using Npgsql;
 
 namespace BtcApi.Infrastructure.DependencyInjection;
@@ -18,6 +22,18 @@ public static class BtcApiServiceCollectionExtensions
     {
         services.AddMemoryCache();
         services.Configure<HistoricalImportOptions>(configuration.GetSection("HistoricalData"));
+        services.AddSingleton<IDemoUserRepository, PostgresDemoUserRepository>();
+        services.AddSingleton<IPasswordHasher<DemoUser>, PasswordHasher<DemoUser>>();
+        services.AddAuthentication(DemoBasicAuthenticationHandler.SchemeName)
+            .AddScheme<AuthenticationSchemeOptions, DemoBasicAuthenticationHandler>(
+                DemoBasicAuthenticationHandler.SchemeName,
+                _ => { });
+        services.AddAuthorization(options =>
+            options.AddPolicy(DemoEndpoints.AuthorizationPolicyName, policy =>
+            {
+                policy.AddAuthenticationSchemes(DemoBasicAuthenticationHandler.SchemeName);
+                policy.RequireAuthenticatedUser();
+            }));
         services.AddSingleton(_ =>
         {
             var connectionString = configuration.GetConnectionString("MarketData")

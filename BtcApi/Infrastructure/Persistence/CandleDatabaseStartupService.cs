@@ -1,5 +1,6 @@
 using BtcApi.Application.Abstractions;
 using BtcApi.Domain.MarketData;
+using BtcApi.Infrastructure.Authentication;
 
 namespace BtcApi.Infrastructure.Persistence;
 
@@ -7,6 +8,7 @@ namespace BtcApi.Infrastructure.Persistence;
 public sealed class CandleDatabaseStartupService : IHostedService
 {
     private readonly ICandleRepository _repository;
+    private readonly IDemoUserRepository _demoUsers;
     private readonly IHistoricalCandleImporter _importer;
     private readonly IKrakenRecentCandleClient _recentCandleClient;
     private readonly IHostApplicationLifetime _lifetime;
@@ -21,12 +23,14 @@ public sealed class CandleDatabaseStartupService : IHostedService
     /// <param name="logger">初期化と取込状態を記録するロガー。</param>
     public CandleDatabaseStartupService(
         ICandleRepository repository,
+        IDemoUserRepository demoUsers,
         IHistoricalCandleImporter importer,
         IKrakenRecentCandleClient recentCandleClient,
         IHostApplicationLifetime lifetime,
         ILogger<CandleDatabaseStartupService> logger)
     {
         _repository = repository;
+        _demoUsers = demoUsers;
         _importer = importer;
         _recentCandleClient = recentCandleClient;
         _lifetime = lifetime;
@@ -43,6 +47,7 @@ public sealed class CandleDatabaseStartupService : IHostedService
             try
             {
                 await _repository.InitializeAsync(cancellationToken);
+                await _demoUsers.InitializeAsync(cancellationToken);
                 break;
             }
             catch (Exception ex) when (attempt < 20 && !cancellationToken.IsCancellationRequested)

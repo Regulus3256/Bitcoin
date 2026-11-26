@@ -1,10 +1,11 @@
 import { BtcApiClient } from './api.js';
 import { CandleAggregator } from './aggregator.js';
-import { CandleChartManager } from './chart.js?v=20261112-sma-scroll';
+import { CandleChartManager } from './chart.js?v=20261113-chart-resize';
+import { availableAmount, demoFeeRate, executeBuy, executeSell, fillLimitOrders } from './demo-trading.js?v=20261126-demo-playback-fix';
 
 const replayPanel = document.getElementById('replay-panel');
 function elementById(id) {
-    return document.getElementById(id) ?? (id === replayPanel.id ? replayPanel : replayPanel.querySelector(`#${id}`));
+    return document.getElementById(id) ?? replayPanel?.querySelector(`#${id}`);
 }
 
 const api = new BtcApiClient();
@@ -26,13 +27,11 @@ const timeframeButtons = [...document.querySelectorAll('.timeframe-btn')];
 const toolsToggle = document.getElementById('tools-toggle');
 const toolsDialog = document.getElementById('tools-dialog');
 const fibonacciButton = document.getElementById('fib-tool');
-const demoModeButton = document.getElementById('demo-mode-toggle');
 const instrumentSelect = document.getElementById('market-symbol-select');
 const initialVisibleCandles = 250;
 const smaWarmupCandles = 199;
 const olderHistoryPageSize = 120;
 const demoStorageKey = 'btc-demo-session-v1';
-const demoFeeRate = 0.001;
 const replayPageSize = 10000;
 let currentRange = '1h';
 let priceSocket;
@@ -48,13 +47,11 @@ let replayAccumulator = 0;
 let replayAdvancing = false;
 let replayPlaybackGeneration = 0;
 let replayHistoryExhausted = false;
-let realRangeBeforeReplay = '1h';
 let currentSymbol = 'BTC';
 let currentInstrument = null;
 let replayRange = '1m';
 let replayAggregator = new CandleAggregator(60);
 let replayProcessedIndex = -1;
-let realSymbolBeforeReplay = 'BTC';
 
 const replayIntervals = {
     '1m': 60,
@@ -309,11 +306,9 @@ function showReplaySession() {
     setReplayStatus();
 }
 
-async function beginReplaySession(session = null) {
+async function beginReplaySession(session = null, selectedStartTime = null) {
     pauseReplay();
-    realSymbolBeforeReplay = currentSymbol;
-    realRangeBeforeReplay = currentRange;
-    const startTime = session?.startTime ?? Math.floor(new Date(`${elementById('replay-date').value}T00:00:00Z`).getTime() / 1000);
+    const startTime = session?.startTime ?? selectedStartTime ?? Math.floor(new Date(`${elementById('replay-date').value}T00:00:00Z`).getTime() / 1000);
 
     statusEl.textContent = '開始日からの1分足をDBから読み込んでいます...';
     const symbol = session?.symbol ?? currentSymbol;
@@ -367,6 +362,7 @@ async function beginReplaySession(session = null) {
     elementById('replay-speed').value = String(replaySession.speed ?? 1);
     syncOrderForm();
     showReplaySession();
+    chartManager.updateCurrentPrice(currentReplayCandle().close);
     saveReplaySession(true);
 }
 
@@ -384,7 +380,9 @@ function advanceReplay(count = 1) {
         const candle = currentReplayCandle();
         const previousCandle = replayCandles[replaySession.cursorIndex - 1];
         skippedMinutes += Math.max(0, Math.round((candle.time - previousCandle.time) / 60) - 1);
-        filledOrders += fillLimitOrders(candle, replaySession.cursorIndex);
+        const result = fillLimitOrders(replaySession, candle, replaySession.cursorIndex);
+        Object.assign(replaySession, result.session);
+        filledOrders += result.filled;
         const aggregateCandle = replayAggregator.processCandle(candle);
         const previousAggregate = advancedCandles.at(-1);
         if (previousAggregate?.time === aggregateCandle.time) {
@@ -489,39 +487,6 @@ function pauseReplay() {
     }
 }
 
-function executeBuy(totalSpend, price, time, orderType = 'market') {
-    totalSpend = Math.min(totalSpend, replaySession.cash);
-    if (totalSpend <= 0 || price <= 0) return false;
-    const gross = totalSpend / (1 + demoFeeRate);
-    const fee = totalSpend - gross;
-    const quantity = gross / price;
-    replaySession.cash -= totalSpend;
-    replaySession.baseQuantity = (replaySession.baseQuantity ?? 0) + quantity;
-    replaySession.costBasis += totalSpend;
-    replaySession.trades.push({ symbol: replaySession.symbol, side: 'buy', orderType, time, price, quantity, fee, realizedPnl: null });
-    return true;
-}
-
-function executeSell(quantity, price, time, orderType = 'market') {
-    quantity = Math.min(quantity, replaySession.baseQuantity ?? 0);
-    if (quantity <= 0 || price <= 0) return false;
-    const gross = quantity * price;
-    const fee = gross * demoFeeRate;
-    const proceeds = gross - fee;
-    const allocatedCostBasis = replaySession.costBasis * quantity / replaySession.baseQuantity;
-    const realizedPnl = proceeds - allocatedCostBasis;
-    replaySession.cash += proceeds;
-    replaySession.baseQuantity -= quantity;
-    replaySession.costBasis -= allocatedCostBasis;
-    replaySession.realizedPnl += realizedPnl;
-    if (replaySession.baseQuantity < 1e-12) {
-        replaySession.baseQuantity = 0;
-        replaySession.costBasis = 0;
-    }
-    replaySession.trades.push({ symbol: replaySession.symbol, side: 'sell', orderType, time, price, quantity, fee, realizedPnl });
-    return true;
-}
-
 function placeOrder() {
     if (!replaySession) return;
     const candle = currentReplayCandle();
@@ -532,24 +497,23 @@ function placeOrder() {
     if (!candle || !Number.isFinite(amount) || amount <= 0) return;
 
     if (side === 'buy') {
-        const reservedCash = replaySession.pendingOrders.filter(order => order.side === 'buy').reduce((sum, order) => sum + order.amount, 0);
-        if (amount > replaySession.cash - reservedCash) {
+        if (amount > availableAmount(replaySession, side)) {
             setReplayStatus('未使用の現金残高を超える買い注文は出せません');
             return;
         }
     } else {
-        const reservedQuantity = replaySession.pendingOrders.filter(order => order.side === 'sell').reduce((sum, order) => sum + order.amount, 0);
-        if (amount > replaySession.baseQuantity - reservedQuantity) {
+        if (amount > availableAmount(replaySession, side)) {
             setReplayStatus('未使用の保有数量を超える売り注文は出せません');
             return;
         }
     }
 
     if (type === 'market') {
-        const success = side === 'buy'
-            ? executeBuy(amount, candle.close, candle.time + 60)
-            : executeSell(amount, candle.close, candle.time + 60);
-        if (success) {
+        const result = side === 'buy'
+            ? executeBuy(replaySession, amount, candle.close, candle.time + 60)
+            : executeSell(replaySession, amount, candle.close, candle.time + 60);
+        Object.assign(replaySession, result.session);
+        if (result.success) {
             setReplayStatus(side === 'buy' ? '成行買いを約定しました' : '成行売りを約定しました');
             saveReplaySession(true);
         }
@@ -569,25 +533,6 @@ function placeOrder() {
     });
     setReplayStatus(`${side === 'buy' ? '買い' : '売り'}指値を受け付けました`);
     saveReplaySession(true);
-}
-
-function fillLimitOrders(candle, candleIndex) {
-    const pendingOrders = replaySession.pendingOrders ?? [];
-    let filled = 0;
-    replaySession.pendingOrders = pendingOrders.filter(order => {
-        if (candleIndex <= order.createdAtIndex) return true;
-        const touched = order.side === 'buy' ? candle.low <= order.limitPrice : candle.high >= order.limitPrice;
-        if (!touched) return true;
-        const price = order.side === 'buy'
-            ? (candle.open <= order.limitPrice ? candle.open : order.limitPrice)
-            : (candle.open >= order.limitPrice ? candle.open : order.limitPrice);
-        const success = order.side === 'buy'
-            ? executeBuy(order.amount, price, candle.time + 60, 'limit')
-            : executeSell(order.amount, price, candle.time + 60, 'limit');
-        if (success) filled += 1;
-        return !success;
-    });
-    return filled;
 }
 
 function syncOrderForm() {
@@ -610,8 +555,7 @@ function syncOrderForm() {
 function handleOrderSideChange() {
     const amountInput = elementById('order-amount');
     if (elementById('order-side').value === 'sell') {
-        const reservedQuantity = replaySession?.pendingOrders.filter(order => order.side === 'sell').reduce((sum, order) => sum + order.amount, 0) ?? 0;
-        amountInput.value = Math.max(0, (replaySession?.baseQuantity ?? 0) - reservedQuantity).toFixed(8);
+        amountInput.value = Math.max(0, replaySession ? availableAmount(replaySession, 'sell') : 0).toFixed(8);
     } else {
         amountInput.value = '1000';
     }
@@ -679,21 +623,7 @@ function bindReplayControls() {
         replaySession = null;
         replayCandles = [];
         saveReplaySession(true);
-        elementById('replay-session').hidden = true;
-        elementById('replay-setup').hidden = false;
-        elementById('replay-panel').hidden = true;
-        document.querySelector('.chart-layout').classList.remove('replay-inline');
-        demoModeButton.setAttribute('aria-pressed', 'false');
-        currentSymbol = realSymbolBeforeReplay;
-        instrumentSelect.value = currentSymbol;
-        currentInstrument = JSON.parse(instrumentSelect.selectedOptions[0].dataset.instrument);
-        document.getElementById('chart-title').textContent = `${currentInstrument.baseAsset}/${currentInstrument.quoteAsset} Realtime Candlestick Chart`;
-        elementById('replay-quote-asset').textContent = currentInstrument.quoteAsset;
-        elementById('replay-price-asset').textContent = currentInstrument.quoteAsset;
-        currentRange = realRangeBeforeReplay;
-        updateTimeframeControlsForReplay(false);
-        void refreshReplayCoverage();
-        loadHistory(currentRange);
+        window.location.assign('/');
     });
 }
 
@@ -720,24 +650,29 @@ async function initializeInstrumentSelector() {
         currentInstrument = instruments.find(instrument => instrument.code === currentSymbol) ?? instruments[0];
         localStorage.setItem('btc-chart-symbol', currentSymbol);
         document.getElementById('chart-title').textContent = `${currentInstrument.baseAsset}/${currentInstrument.quoteAsset} Realtime Candlestick Chart`;
-        await refreshReplayCoverage();
+        if (replayPanel) await refreshReplayCoverage();
         await loadHistory(currentRange);
     });
-
-    demoModeButton.addEventListener('click', toggleReplayPanel);
 
     return instruments;
 }
 
-function toggleReplayPanel() {
-    const chartLayout = document.querySelector('.chart-layout');
-    const isOpen = replayPanel.hidden;
-    if (isOpen) chartLayout.prepend(replayPanel);
-    replayPanel.hidden = !isOpen;
-    chartLayout.classList.toggle('replay-inline', isOpen);
-    demoModeButton.setAttribute('aria-pressed', String(isOpen));
-    if (isOpen) void refreshReplayCoverage();
-}
+chartManager.setContextMenuHandler(async startTime => {
+    if (!replayPanel) {
+        window.location.assign(`/demo?start=${startTime}`);
+        return;
+    }
+    if (replaySession) {
+        statusEl.textContent = 'デモを終了してから別の足を選択してください';
+        return;
+    }
+    if (localStorage.getItem(demoStorageKey) && !window.confirm('保存済みデモを新しいセッションに置き換えますか？')) return;
+    try {
+        await beginReplaySession(null, startTime);
+    } catch (error) {
+        statusEl.textContent = `デモを開始できません: ${error.message}`;
+    }
+});
 
 async function initializeReplayPanel() {
     const dateInput = elementById('replay-date');
@@ -868,7 +803,17 @@ chartManager.setFibonacciStateHandler(state => {
 
 chartManager.setLoadMoreHandler(loadOlderHistory);
 initializeInstrumentSelector()
-    .then(() => Promise.all([loadHistory(currentRange), initializeReplayPanel()]))
+    .then(() => Promise.all([loadHistory(currentRange), replayPanel ? initializeReplayPanel() : Promise.resolve()]))
+    .then(() => {
+        if (!replayPanel) return;
+        const selectedStartTime = Number(new URLSearchParams(window.location.search).get('start'));
+        if (Number.isSafeInteger(selectedStartTime) && selectedStartTime > 0) {
+            window.history.replaceState(null, '', '/demo');
+            if (localStorage.getItem(demoStorageKey) && !window.confirm('保存済みデモを新しいセッションに置き換えますか？')) return;
+            void beginReplaySession(null, selectedStartTime)
+                .catch(error => { statusEl.textContent = `デモを開始できません: ${error.message}`; });
+        }
+    })
     .catch(err => {
         statusEl.textContent = `初期化に失敗しました: ${err.message}`;
     });

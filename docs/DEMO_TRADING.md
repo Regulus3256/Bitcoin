@@ -25,7 +25,14 @@ DBスキーマ作成後、履歴の取り込みはAPIを起動したままバッ
 Invoke-RestMethod http://localhost:8080/api/btc/data-status
 ```
 
-デモ画面は`http://localhost:8080`です。初回取り込み中は、対象期間の1分足が揃うまでセッション開始を再試行してください。
+通常画面は`http://localhost:8080`で、「デモ取引」から別ページの`http://localhost:8080/demo`へ移動します。セッション終了時は通常画面に戻ります。初回取り込み中は、対象期間の1分足が揃うまでセッション開始を再試行してください。
+
+## デモ画面のBasic認証
+
+- デモ画面は`/demo`で提供し、HTTP Basic認証を要求します。通常チャートと`/api/*`は公開のままです。
+- アカウント登録はWeb画面から行えません。`BtcApi`ディレクトリで`dotnet run -- create-demo-user <username>`を実行し、対話プロンプトでパスワードを2回入力してください。パスワードは表示されず、12文字以上が必要です。
+- ユーザーはPostgreSQLの`demo_users`テーブルに保存します。パスワードはASP.NET Core `PasswordHasher`でハッシュ化し、平文は保存しません。
+- RenderではWeb Service Shellから`dotnet BtcApi.dll create-demo-user <username>`を実行できます。RenderのHTTPS URLでアクセスしてください。Basic認証の資格情報はHTTPSで保護します。
 
 ## 保存と容量
 
