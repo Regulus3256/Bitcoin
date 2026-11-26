@@ -6,7 +6,7 @@ namespace BtcApi.Application.Abstractions;
 public interface ILivePriceHub
 {
     /// <summary>最新価格を取得します。最初の価格を受信するまではnullです。</summary>
-    PriceSnapshot? CurrentPrice { get; }
+    PriceSnapshot? GetCurrentPrice(string? symbol);
 
     /// <summary>価格情報を接続中のブラウザークライアントへ配信します。</summary>
     /// <param name="snapshot">配信する価格情報。</param>

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
 using BtcApi.Application.Abstractions;
+using BtcApi.Domain.MarketData;
 using BtcApi.Domain.Models;
 
 namespace BtcApi.Infrastructure.Streaming;
@@ -12,7 +13,7 @@ public sealed class BrowserPriceHub : ILivePriceHub
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ConcurrentDictionary<Guid, BrowserClient> _clients = new();
     private readonly ILogger<BrowserPriceHub> _logger;
-    private PriceSnapshot? _currentPrice;
+    private readonly ConcurrentDictionary<string, PriceSnapshot> _currentPrices = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>ブラウザー向け価格Hubを生成します。</summary>
     /// <param name="logger">切断したブラウザークライアントを記録するロガー。</param>
@@ -22,12 +23,16 @@ public sealed class BrowserPriceHub : ILivePriceHub
     }
 
     /// <inheritdoc />
-    public PriceSnapshot? CurrentPrice => Volatile.Read(ref _currentPrice);
+    public PriceSnapshot? GetCurrentPrice(string? symbol)
+    {
+        var instrument = MarketInstrument.FromCode(symbol);
+        return _currentPrices.TryGetValue(instrument.Code, out var snapshot) ? snapshot : null;
+    }
 
     /// <inheritdoc />
     public async Task PublishAsync(PriceSnapshot snapshot, CancellationToken cancellationToken)
     {
-        Volatile.Write(ref _currentPrice, snapshot);
+        _currentPrices[snapshot.Symbol] = snapshot;
         var payload = JsonSerializer.SerializeToUtf8Bytes(snapshot, JsonOptions);
         foreach (var client in _clients.Values)
         {
@@ -57,7 +62,7 @@ public sealed class BrowserPriceHub : ILivePriceHub
         _clients[client.Id] = client;
         try
         {
-            if (CurrentPrice is { } currentPrice)
+            foreach (var currentPrice in _currentPrices.Values)
             {
                 await SendAsync(client, JsonSerializer.SerializeToUtf8Bytes(currentPrice, JsonOptions), context.RequestAborted);
             }

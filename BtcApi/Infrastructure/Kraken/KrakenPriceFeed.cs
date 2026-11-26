@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using BtcApi.Application.Abstractions;
+using BtcApi.Domain.MarketData;
 
 namespace BtcApi.Infrastructure.Kraken;
 
@@ -8,16 +10,18 @@ namespace BtcApi.Infrastructure.Kraken;
 public sealed class KrakenPriceFeed : BackgroundService
 {
     private static readonly Uri SocketUri = new("wss://ws.kraken.com/v2");
-    private const string SubscribeMessage = "{\"method\":\"subscribe\",\"params\":{\"channel\":\"ticker\",\"symbol\":[\"BTC/USD\"],\"snapshot\":true}}";
     private readonly ILivePriceHub _priceHub;
+    private readonly ILiveCandleRecorder _candleRecorder;
     private readonly ILogger<KrakenPriceFeed> _logger;
 
     /// <summary>Krakenのティッカー配信接続を生成します。</summary>
     /// <param name="priceHub">価格をアプリケーションへ通知するHub。</param>
+    /// <param name="candleRecorder">ライブ価格を1分足として保存するサービス。</param>
     /// <param name="logger">再接続やプロバイダー障害を記録するロガー。</param>
-    public KrakenPriceFeed(ILivePriceHub priceHub, ILogger<KrakenPriceFeed> logger)
+    public KrakenPriceFeed(ILivePriceHub priceHub, ILiveCandleRecorder candleRecorder, ILogger<KrakenPriceFeed> logger)
     {
         _priceHub = priceHub;
+        _candleRecorder = candleRecorder;
         _logger = logger;
     }
 
@@ -34,7 +38,12 @@ public sealed class KrakenPriceFeed : BackgroundService
                 using var socket = new ClientWebSocket();
                 socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
                 await socket.ConnectAsync(SocketUri, stoppingToken);
-                var subscribe = Encoding.UTF8.GetBytes(SubscribeMessage);
+                var symbols = MarketInstrument.Supported.Select(instrument => instrument.KrakenWebSocketSymbol);
+                var subscribe = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+                {
+                    method = "subscribe",
+                    @params = new { channel = "ticker", symbol = symbols, snapshot = true }
+                }));
                 await socket.SendAsync(new ArraySegment<byte>(subscribe), WebSocketMessageType.Text, true, stoppingToken);
                 await ReceiveUpdatesAsync(socket, stoppingToken);
                 delay = TimeSpan.FromSeconds(2);
@@ -90,6 +99,7 @@ public sealed class KrakenPriceFeed : BackgroundService
             message.SetLength(0);
             if (snapshot is not null)
             {
+                await _candleRecorder.RecordAsync(snapshot, cancellationToken);
                 await _priceHub.PublishAsync(snapshot, cancellationToken);
             }
         }

@@ -6,12 +6,12 @@
     <!-- 外部ライブラリ -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <!-- 自作CSS -->
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=20261126-demo-page">
 </head>
 <body>
     <header class="page-header">
         <div class="title-tools">
-            <h1>BTC/USD Realtime Candlestick Chart</h1>
+            <h1 id="chart-title">BTC/USD Realtime Candlestick Chart</h1>
             <button id="tools-toggle" class="tools-toggle" type="button" aria-label="チャートツール" aria-expanded="false" aria-controls="tools-dialog" title="チャートツール">
                 <span></span><span></span><span></span>
             </button>
@@ -49,11 +49,18 @@
     </dialog>
 
     <div class="toolbar" aria-label="Timeframe selector">
+        <label class="market-select-label">銘柄
+            <select id="market-symbol-select" aria-label="銘柄"></select>
+        </label>
         <button class="timeframe-btn" data-range="1m">1分足</button>
         <button class="timeframe-btn active" data-range="1h">1時間足</button>
         <button class="timeframe-btn" data-range="4h">4時間足</button>
         <button class="timeframe-btn" data-range="1d">日足</button>
         <button class="timeframe-btn" data-range="1w">週足</button>
+        <a id="demo-mode-toggle" class="demo-mode-button" href="/demo">
+            <span aria-hidden="true">↗</span>
+            <span>デモ取引</span>
+        </a>
     </div>
 
     <div class="chart-layout">
@@ -61,6 +68,6 @@
     </div>
     <div id="status" class="status">Connecting...</div>
 
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/main.js?v=20261126-demo-page"></script>
 </body>
 </html>

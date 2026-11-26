@@ -6,4 +6,5 @@ namespace BtcApi.Domain.Models;
 /// <param name="High">高値。</param>
 /// <param name="Low">安値。</param>
 /// <param name="Close">終値。</param>
-public sealed record CandleData(long Time, decimal Open, decimal High, decimal Low, decimal Close);
+/// <param name="Volume">期間中の取引量。</param>
+public sealed record CandleData(long Time, decimal Open, decimal High, decimal Low, decimal Close, decimal Volume = 0);

@@ -10,32 +10,35 @@ namespace BtcApi.Application.Services;
 /// <summary>履歴リクエストを正規化し、プロバイダー接続の前後にメモリキャッシュを適用します。</summary>
 public sealed class CachedBtcMarketDataService : IBtcMarketDataService
 {
-    private readonly IKrakenOhlcClient _ohlcClient;
+    private readonly ICandleRepository _repository;
     private readonly IMemoryCache _cache;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _rangeLocks = new();
 
     /// <summary>過去データ取得サービスを生成します。</summary>
     /// <param name="ohlcClient">ローソク足取得を担当するプロバイダー接続。</param>
     /// <param name="cache">外部APIへの重複アクセスを減らすキャッシュ。</param>
-    public CachedBtcMarketDataService(IKrakenOhlcClient ohlcClient, IMemoryCache cache)
+    public CachedBtcMarketDataService(ICandleRepository repository, IMemoryCache cache)
     {
-        _ohlcClient = ohlcClient;
+        _repository = repository;
         _cache = cache;
     }
 
     /// <inheritdoc />
-    public async Task<CandleData[]> GetHistoryAsync(string? range, long? before, int? limit, CancellationToken cancellationToken)
+    public async Task<CandleData[]> GetHistoryAsync(string? symbol, string? range, long? from, long? through, long? before, int? limit, CancellationToken cancellationToken)
     {
+        var instrument = MarketInstrument.FromCode(symbol);
         var timeframe = CandleTimeframe.FromKey(range);
-        var pageSize = limit.HasValue ? Math.Clamp(limit.Value, 20, 500) : timeframe.DefaultPageSize;
-        var cursor = before?.ToString(CultureInfo.InvariantCulture) ?? "latest";
-        var cacheKey = $"btc-history:{timeframe.Key}:{cursor}:{pageSize}";
+        var pageSize = limit.HasValue ? Math.Clamp(limit.Value, 20, 10000) : timeframe.DefaultPageSize;
+        var fromKey = from?.ToString(CultureInfo.InvariantCulture) ?? "start";
+        var throughKey = through?.ToString(CultureInfo.InvariantCulture) ?? "open";
+        var beforeKey = before?.ToString(CultureInfo.InvariantCulture) ?? "latest";
+        var cacheKey = $"market-history:{instrument.Code}:{timeframe.Key}:{fromKey}:{throughKey}:{beforeKey}:{pageSize}";
         if (_cache.TryGetValue(cacheKey, out CandleData[]? cached) && cached is not null)
         {
             return cached;
         }
 
-        var rangeLock = _rangeLocks.GetOrAdd(timeframe.Key, _ => new SemaphoreSlim(1, 1));
+        var rangeLock = _rangeLocks.GetOrAdd($"{instrument.Code}:{timeframe.Key}", _ => new SemaphoreSlim(1, 1));
         await rangeLock.WaitAsync(cancellationToken);
         try
         {
@@ -44,7 +47,7 @@ public sealed class CachedBtcMarketDataService : IBtcMarketDataService
                 return cached;
             }
 
-            var candles = await _ohlcClient.GetCandlesAsync(timeframe, before, pageSize, cancellationToken);
+            var candles = await _repository.GetCandlesAsync(instrument, timeframe, from, through, before, pageSize, cancellationToken);
             _cache.Set(cacheKey, candles, timeframe.CacheDuration);
             return candles;
         }
