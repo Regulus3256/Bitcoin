@@ -74,8 +74,20 @@ public sealed class PostgresCandleRepository : ICandleRepository
         CancellationToken cancellationToken)
     {
         var sortDirection = from.HasValue ? "ASC" : "DESC";
+        // One extra bucket of minute rows keeps the last returned bucket complete.
         var sql = $"""
-            WITH grouped AS (
+            WITH candidates AS (
+                SELECT open_time, open, high, low, close, volume
+                FROM btc_candles
+                WHERE symbol = $1
+                  AND interval_minutes = 1
+                  AND ($3 IS NULL OR open_time >= to_timestamp($3))
+                  AND ($4 IS NULL OR open_time < to_timestamp($4))
+                  AND ($5 IS NULL OR open_time < to_timestamp($5))
+                ORDER BY open_time {sortDirection}
+                LIMIT (($6::bigint + 1) * $2::bigint)
+            ),
+            grouped AS (
                 SELECT
                     floor(extract(epoch FROM open_time) / ($2::bigint * 60))::bigint * ($2::bigint * 60) AS candle_time,
                     (array_agg(open ORDER BY open_time ASC))[1] AS candle_open,
@@ -83,12 +95,7 @@ public sealed class PostgresCandleRepository : ICandleRepository
                     min(low) AS candle_low,
                     (array_agg(close ORDER BY open_time DESC))[1] AS candle_close,
                     sum(volume) AS candle_volume
-                FROM btc_candles
-                WHERE symbol = $1
-                  AND interval_minutes = 1
-                  AND ($3 IS NULL OR open_time >= to_timestamp($3))
-                  AND ($4 IS NULL OR open_time < to_timestamp($4))
-                  AND ($5 IS NULL OR open_time < to_timestamp($5))
+                FROM candidates
                 GROUP BY candle_time
             )
             SELECT candle_time, candle_open, candle_high, candle_low, candle_close, candle_volume
