@@ -6,7 +6,7 @@
     <!-- 外部ライブラリ -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <!-- 自作CSS -->
-    <link rel="stylesheet" href="css/style.css?v=20261128-history-loading">
+    <link rel="stylesheet" href="css/style.css?v=20261128-progressive-history">
 </head>
 <body>
     <header class="page-header">
@@ -61,6 +61,7 @@
             <span class="history-loading-spinner" aria-hidden="true"></span>
             <span class="history-loading-text"></span>
         </div>
+        <span id="history-hint" class="history-hint" role="note" hidden></span>
         <a id="demo-mode-toggle" class="demo-mode-button" href="/demo">
             <span aria-hidden="true">↗</span>
             <span>デモ取引</span>
@@ -72,6 +73,6 @@
     </div>
     <div id="status" class="status">Connecting...</div>
 
-    <script type="module" src="js/main.js?v=20261128-history-loading"></script>
+    <script type="module" src="js/main.js?v=20261128-progressive-history"></script>
 </body>
 </html>

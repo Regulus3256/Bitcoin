@@ -20,6 +20,7 @@ const chartManager = new CandleChartManager('chart', document.getElementById('ca
 const statusEl = document.getElementById('status');
 const historyLoadingEl = document.getElementById('history-loading');
 const historyLoadingTextEl = historyLoadingEl.querySelector('.history-loading-text');
+const historyHintEl = document.getElementById('history-hint');
 const replayStatusEl = elementById('replay-message');
 if (replayStatusEl) {
     new MutationObserver(() => { replayStatusEl.textContent = statusEl.textContent; })
@@ -71,25 +72,77 @@ const timeframeLabels = {
     '1d': '日足',
     '1w': '週足'
 };
+const progressivelyLoadedRanges = new Set(['1d', '1w']);
+const initialVisibleCandlesByRange = { '1d': 120, '1w': 60 };
+const olderHistoryPageSizes = { '1d': 60, '1w': 20 };
+let historyIndicatorId = 0;
+let olderHistoryLoading = false;
+
+function showHistoryLoading(message) {
+    const indicatorId = ++historyIndicatorId;
+    historyLoadingEl.hidden = false;
+    historyLoadingTextEl.textContent = message;
+    document.getElementById('chart').setAttribute('aria-busy', 'true');
+    return indicatorId;
+}
+
+function hideHistoryLoading(indicatorId) {
+    if (indicatorId !== historyIndicatorId) return;
+    historyLoadingEl.hidden = true;
+    document.getElementById('chart').removeAttribute('aria-busy');
+}
+
+function updateHistoryHint(range) {
+    const visibleCount = initialVisibleCandlesByRange[range];
+    historyHintEl.hidden = visibleCount === undefined;
+    if (visibleCount !== undefined) {
+        historyHintEl.textContent = `最新${visibleCount}${range === '1d' ? '日' : '週'}を表示中。左へスクロールすると過去データを追加します。`;
+    }
+}
 
 async function loadOlderHistory() {
+    if (olderHistoryLoading || document.getElementById('chart').getAttribute('aria-busy') === 'true') {
+        return;
+    }
+
     const oldestTime = chartManager.getOldestTime();
     if (oldestTime == null) {
         return;
     }
 
-    try {
-        const range = currentRange;
-        const symbol = currentSymbol;
-        const session = replaySession;
-        const olderCandles = await api.fetchHistoricalCandles(
-            range, oldestTime, olderHistoryPageSize + smaWarmupCandles, null, null, symbol);
-        if (range !== currentRange || symbol !== currentSymbol || session !== replaySession || oldestTime !== chartManager.getOldestTime()) return;
+    const range = currentRange;
+    const symbol = currentSymbol;
+    const session = replaySession;
+    const pageSize = olderHistoryPageSizes[range] ?? olderHistoryPageSize;
+    const warmupCount = progressivelyLoadedRanges.has(range) ? 0 : smaWarmupCandles;
+    historyRequestController?.abort();
+    const controller = new AbortController();
+    historyRequestController = controller;
+    const requestId = ++historyRequestId;
+    const indicatorId = showHistoryLoading(`${timeframeLabels[range] ?? range}の過去データを追加読み込み中...`);
+    olderHistoryLoading = true;
 
-        const visibleStart = Math.max(0, olderCandles.length - olderHistoryPageSize);
+    try {
+        const olderCandles = await api.fetchHistoricalCandles(
+            range, oldestTime, pageSize + warmupCount, null, null, symbol, controller.signal);
+        if (requestId !== historyRequestId || range !== currentRange || symbol !== currentSymbol || session !== replaySession || oldestTime !== chartManager.getOldestTime()) return;
+        if (olderCandles.length === 0) {
+            chartManager.setLoadMoreHandler(null);
+            return;
+        }
+
+        const visibleStart = Math.max(0, olderCandles.length - pageSize);
         chartManager.prependCandles(olderCandles.slice(visibleStart), olderCandles.slice(0, visibleStart));
     } catch (err) {
-        console.error('Older history load error:', err);
+        if (!controller.signal.aborted) {
+            console.error('Older history load error:', err);
+        }
+    } finally {
+        olderHistoryLoading = false;
+        if (requestId === historyRequestId) {
+            historyRequestController = null;
+            hideHistoryLoading(indicatorId);
+        }
     }
 }
 
@@ -98,20 +151,21 @@ async function loadHistory(range = currentRange) {
     const controller = new AbortController();
     historyRequestController = controller;
     const requestId = ++historyRequestId;
-    historyLoadingEl.hidden = false;
-    historyLoadingTextEl.textContent = `${timeframeLabels[range] ?? range}の履歴を読み込み中...`;
-    document.getElementById('chart').setAttribute('aria-busy', 'true');
+    const indicatorId = showHistoryLoading(`${timeframeLabels[range] ?? range}の履歴を読み込み中...`);
+    const visibleCount = initialVisibleCandlesByRange[range] ?? initialVisibleCandles;
+    const warmupCount = progressivelyLoadedRanges.has(range) ? 0 : smaWarmupCandles;
+    updateHistoryHint(range);
 
     try {
         const requestedSymbol = currentSymbol;
         const candles = await api.fetchHistoricalCandles(
-            range, null, initialVisibleCandles + smaWarmupCandles, null, null, requestedSymbol, controller.signal);
+            range, null, visibleCount + warmupCount, null, null, requestedSymbol, controller.signal);
         if (requestId !== historyRequestId || range !== currentRange || requestedSymbol !== currentSymbol || replaySession) {
             return;
         }
 
         if (candles.length > 0) {
-            const visibleStart = Math.max(0, candles.length - initialVisibleCandles);
+            const visibleStart = Math.max(0, candles.length - visibleCount);
             chartManager.setCandles(candles.slice(visibleStart), true, candles.slice(0, visibleStart));
             chartManager.setLoadMoreHandler(loadOlderHistory);
             const latest = candles[candles.length - 1];
@@ -138,8 +192,7 @@ async function loadHistory(range = currentRange) {
     } finally {
         if (requestId === historyRequestId) {
             historyRequestController = null;
-            historyLoadingEl.hidden = true;
-            document.getElementById('chart').removeAttribute('aria-busy');
+            hideHistoryLoading(indicatorId);
         }
     }
 }
@@ -170,15 +223,17 @@ async function loadReplayHistoryContext(range, startTime, symbol, signal = undef
     if (replayIntervals[range] === undefined) {
         return { visible: [], warmup: [] };
     }
+    const visibleCount = initialVisibleCandlesByRange[range] ?? initialVisibleCandles;
+    const warmupCount = progressivelyLoadedRanges.has(range) ? 0 : smaWarmupCandles;
     const history = await api.fetchHistoricalCandles(
         range,
         startTime,
-        initialVisibleCandles + smaWarmupCandles,
+        visibleCount + warmupCount,
         null,
         null,
         symbol,
         signal);
-    const visibleStart = Math.max(0, history.length - initialVisibleCandles);
+    const visibleStart = Math.max(0, history.length - visibleCount);
     return {
         visible: history.slice(visibleStart),
         warmup: history.slice(0, visibleStart)
@@ -768,13 +823,12 @@ function connectPriceStream() {
 async function setRange(range) {
     if (replaySession) {
         if (range === replayRange) return;
+        updateHistoryHint(range);
         historyRequestController?.abort();
         const controller = new AbortController();
         historyRequestController = controller;
         const requestId = ++historyRequestId;
-        historyLoadingEl.hidden = false;
-        historyLoadingTextEl.textContent = `${timeframeLabels[range] ?? range}の履歴を読み込み中...`;
-        document.getElementById('chart').setAttribute('aria-busy', 'true');
+        const indicatorId = showHistoryLoading(`${timeframeLabels[range] ?? range}の履歴を読み込み中...`);
         try {
             const sessionSymbol = replaySession.symbol;
             const historyContext = await loadReplayHistoryContext(
@@ -796,8 +850,7 @@ async function setRange(range) {
         } finally {
             if (requestId === historyRequestId) {
                 historyRequestController = null;
-                historyLoadingEl.hidden = true;
-                document.getElementById('chart').removeAttribute('aria-busy');
+                hideHistoryLoading(indicatorId);
             }
         }
         return;

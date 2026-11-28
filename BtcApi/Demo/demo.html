@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>デモ取引 - BTC/USD Candlestick Chart</title>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="/css/style.css?v=20261128-history-loading">
+    <link rel="stylesheet" href="/css/style.css?v=20261128-progressive-history">
 </head>
 <body>
     <header class="page-header">
@@ -59,6 +59,7 @@
             <span class="history-loading-spinner" aria-hidden="true"></span>
             <span class="history-loading-text"></span>
         </div>
+        <span id="history-hint" class="history-hint" role="note" hidden></span>
         <a class="demo-mode-button" href="/">通常チャートに戻る</a>
     </div>
 
@@ -118,6 +119,6 @@
     </div>
     <div id="status" class="status">Connecting...</div>
 
-    <script type="module" src="/js/main.js?v=20261128-history-loading"></script>
+    <script type="module" src="/js/main.js?v=20261128-progressive-history"></script>
 </body>
 </html>
