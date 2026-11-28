@@ -49,7 +49,7 @@
 - `BtcApi/wwwroot/js/chart-context.test.js` — チャート右クリックメニューのブラウザーテスト; `runChartContextTests`; DOM。
 - `BtcApi/wwwroot/js/demo-trading.js` — デモ残高・成行売買・指値約定; `availableAmount`, `executeBuy`, `executeSell`, `fillLimitOrders`; I/O: なし。
 - `BtcApi/wwwroot/js/demo-trading.test.js` — デモ取引ロジックのブラウザーテスト; `runDemoTradingTests`; I/O: なし。
-- `BtcApi/wwwroot/js/main.js` — 通常チャートと専用デモ画面を制御し日足・週足は全履歴を初回取得; `BtcApiClient`, `CandleAggregator`, `CandleChartManager`; `/demo`, `/ws/price`, `/api/market/*`, `localStorage` (`btc-demo-session-v1`, `btc-chart-symbol`)。
+- `BtcApi/wwwroot/js/main.js` — 通常チャートと専用デモ画面を制御し日足120本・週足60本から過去足を段階取得; `BtcApiClient`, `CandleAggregator`, `CandleChartManager`; `/demo`, `/ws/price`, `/api/market/*`, `localStorage` (`btc-demo-session-v1`, `btc-chart-symbol`)。
 
 ## Host / configuration
 - `BtcApi/Program.cs` — Webアプリ起動、Basic認証とルート登録; `create-demo-user`, `MapBtcEndpoints`, `MapDemoEndpoints`; PostgreSQL設定。
