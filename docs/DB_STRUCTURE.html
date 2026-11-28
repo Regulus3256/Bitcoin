@@ -98,7 +98,7 @@
   <main>
     <header>
       <h1>BTC App データベース構成図</h1>
-      <p class="subtitle">PostgreSQLに保存する1分足・日足・週足、アーカイブ取込台帳、デモ認証ユーザー</p>
+      <p class="subtitle">PostgreSQLに保存する1分足・集計時間足、アーカイブ取込台帳、デモ認証ユーザー</p>
     </header>
 
     <section class="panel" aria-labelledby="architecture-title">
@@ -114,7 +114,7 @@
           <strong>ASP.NET Core API</strong>
           <div><code>BinanceVisionCandleImporter</code></div>
           <div><code>KrakenPriceFeed</code> / <code>LiveMinuteCandleRecorder</code></div>
-          <div class="muted">1分足を保存し、日足・週足を集計して保存</div>
+          <div class="muted">1分足を保存し、1時間足以上を段階集計して保存</div>
         </div>
         <div class="arrow" aria-hidden="true">→</div>
         <div class="flow-card db-card">
@@ -133,12 +133,12 @@
         <article class="table-card">
           <header>
             <h3><code>btc_candles</code></h3>
-            <p>1分足と集計済みの日足・週足</p>
+            <p>1分足と集計済みの1時間足・4時間足・日足・週足</p>
           </header>
           <table>
             <tbody>
               <tr><th><code>symbol</code></th><td><code>text NOT NULL</code> <span class="tag">PK</span></td></tr>
-              <tr><th><code>interval_minutes</code></th><td><code>integer NOT NULL</code>（1 / 1440 / 10080）<span class="tag">PK</span></td></tr>
+              <tr><th><code>interval_minutes</code></th><td><code>integer NOT NULL</code>（1 / 60 / 240 / 1440 / 10080）<span class="tag">PK</span></td></tr>
               <tr><th><code>open_time</code></th><td><code>timestamptz NOT NULL</code> <span class="tag">PK</span></td></tr>
               <tr><th><code>open</code>, <code>high</code></th><td><code>numeric(20,8) NOT NULL</code></td></tr>
               <tr><th><code>low</code>, <code>close</code></th><td><code>numeric(20,8) NOT NULL</code></td></tr>
@@ -154,12 +154,13 @@
         <article class="table-card">
           <header>
             <h3><code>candle_rollup_backfills</code></h3>
-            <p>既存1分足からの日足・週足バックフィル状態</p>
+            <p>既存1分足からの集計時間足バックフィル状態</p>
           </header>
           <table>
             <tbody>
               <tr><th><code>symbol</code></th><td><code>text PRIMARY KEY</code></td></tr>
               <tr><th><code>completed_at</code></th><td><code>timestamptz NOT NULL DEFAULT now()</code></td></tr>
+              <tr><th><code>rollup_version</code></th><td><code>integer NOT NULL</code></td></tr>
             </tbody>
           </table>
         </article>
@@ -224,8 +225,8 @@
         <li><code>btc_candles</code> の検索用インデックス: <code>ix_btc_candles_time (symbol, interval_minutes, open_time DESC)</code>。</li>
         <li>テーブル間に外部キー制約はありません。台帳と足データは <code>symbol</code>・<code>interval_minutes</code>・期間を使ってアプリケーション側で対応します。</li>
         <li>月次・日次取込では、一時テーブル <code>candle_import_stage</code> をトランザクション中に作成し、足データと台帳を同一トランザクションで保存します。コミット時に一時テーブルは破棄されます。</li>
-        <li>起動時に既存の1分足から日足・週足を一度だけ作成し、アーカイブ取込後とライブ足の更新時に該当バケットを再集計します。</li>
-        <li>日足・週足の履歴取得は、バックフィル完了後に <code>btc_candles.interval_minutes</code> の集計済み行を読み込みます。</li>
+        <li>起動時に既存の1分足から1時間足・4時間足・日足・週足を一度だけ作成し、アーカイブ取込後とライブ足の更新時に該当バケットを再集計します。</li>
+        <li>1時間足以上の履歴取得は、バックフィル完了後に <code>btc_candles.interval_minutes</code> の集計済み行を読み込みます。</li>
         <li><code>demo_users.password_hash</code>にはASP.NET Core <code>PasswordHasher</code>の結果を保存し、パスワード平文は保存しません。ユーザー追加はCLIのみです。</li>
       </ul>
     </section>

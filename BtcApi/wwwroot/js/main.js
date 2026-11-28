@@ -72,8 +72,8 @@ const timeframeLabels = {
     '1d': '日足',
     '1w': '週足'
 };
-const progressivelyLoadedRanges = new Set(['1d', '1w']);
-const initialVisibleCandlesByRange = { '1d': 120, '1w': 60 };
+const fullHistoryRanges = new Set(['1d', '1w']);
+const initialVisibleCandlesByRange = { '1d': 10000, '1w': 10000 };
 const olderHistoryPageSizes = { '1d': 60, '1w': 20 };
 let historyIndicatorId = 0;
 let olderHistoryLoading = false;
@@ -94,8 +94,8 @@ function hideHistoryLoading(indicatorId) {
 
 function updateHistoryHint(range) {
     const visibleCount = initialVisibleCandlesByRange[range];
-    historyHintEl.hidden = visibleCount === undefined;
-    if (visibleCount !== undefined) {
+    historyHintEl.hidden = visibleCount === undefined || fullHistoryRanges.has(range);
+    if (visibleCount !== undefined && !fullHistoryRanges.has(range)) {
         historyHintEl.textContent = `最新${visibleCount}${range === '1d' ? '日' : '週'}を表示中。左へスクロールすると過去データを追加します。`;
     }
 }
@@ -114,7 +114,7 @@ async function loadOlderHistory() {
     const symbol = currentSymbol;
     const session = replaySession;
     const pageSize = olderHistoryPageSizes[range] ?? olderHistoryPageSize;
-    const warmupCount = progressivelyLoadedRanges.has(range) ? 0 : smaWarmupCandles;
+    const warmupCount = fullHistoryRanges.has(range) ? 0 : smaWarmupCandles;
     historyRequestController?.abort();
     const controller = new AbortController();
     historyRequestController = controller;
@@ -153,7 +153,7 @@ async function loadHistory(range = currentRange) {
     const requestId = ++historyRequestId;
     const indicatorId = showHistoryLoading(`${timeframeLabels[range] ?? range}の履歴を読み込み中...`);
     const visibleCount = initialVisibleCandlesByRange[range] ?? initialVisibleCandles;
-    const warmupCount = progressivelyLoadedRanges.has(range) ? 0 : smaWarmupCandles;
+    const warmupCount = fullHistoryRanges.has(range) ? 0 : smaWarmupCandles;
     updateHistoryHint(range);
 
     try {
@@ -224,7 +224,7 @@ async function loadReplayHistoryContext(range, startTime, symbol, signal = undef
         return { visible: [], warmup: [] };
     }
     const visibleCount = initialVisibleCandlesByRange[range] ?? initialVisibleCandles;
-    const warmupCount = progressivelyLoadedRanges.has(range) ? 0 : smaWarmupCandles;
+    const warmupCount = fullHistoryRanges.has(range) ? 0 : smaWarmupCandles;
     const history = await api.fetchHistoricalCandles(
         range,
         startTime,

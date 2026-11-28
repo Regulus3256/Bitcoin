@@ -81,7 +81,7 @@ public sealed class CandleDatabaseStartupService : IHostedService
             try
             {
                 await _repository.BackfillRollupsAsync(instrument, cancellationToken);
-                _logger.LogInformation("日足・週足のバックフィルが完了しました: {Instrument}", instrument.Code);
+                _logger.LogInformation("上位時間足のバックフィルが完了しました: {Instrument}", instrument.Code);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -89,7 +89,7 @@ public sealed class CandleDatabaseStartupService : IHostedService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "日足・週足のバックフィルに失敗しました: {Instrument}", instrument.Code);
+                _logger.LogError(ex, "上位時間足のバックフィルに失敗しました: {Instrument}", instrument.Code);
             }
         }
 

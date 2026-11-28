@@ -34,9 +34,9 @@
 - `BtcApi/Infrastructure/Kraken/KrakenOhlcParser.cs` — Kraken OHLC応答の解析; `KrakenOhlcParser.Parse`; JSON入力、I/O: なし。
 - `BtcApi/Infrastructure/Kraken/KrakenPriceFeed.cs` — Kraken ticker受信と価格配信・足記録; `KrakenPriceFeed`; `wss://ws.kraken.com/v2`, `ILivePriceHub`, `ILiveCandleRecorder`。
 - `BtcApi/Infrastructure/Kraken/KrakenTickerParser.cs` — Kraken tickerメッセージ解析; `KrakenTickerParser.Parse`; JSON入力、I/O: なし。
-- `BtcApi/Infrastructure/Persistence/CandleDatabaseStartupService.cs` — DB初期化後の認証スキーマ作成・日足/週足バックフィル・過去足取込起動; `StartAsync`, `StopAsync`; repositories、Importer、Kraken client。
+- `BtcApi/Infrastructure/Persistence/CandleDatabaseStartupService.cs` — DB初期化後の認証スキーマ作成・1時間足以上のバックフィル・過去足取込起動; `StartAsync`, `StopAsync`; repositories、Importer、Kraken client。
 - `BtcApi/Infrastructure/Persistence/PostgresDemoUserRepository.cs` — `demo_users`の作成・検索・追加; `IDemoUserRepository`; PostgreSQL。
-- `BtcApi/Infrastructure/Persistence/PostgresCandleRepository.cs` — 1分足と日足/週足ロールアップ、coverage、取込台帳をPostgreSQLで管理; `ICandleRepository`実装; `NpgsqlDataSource`。
+- `BtcApi/Infrastructure/Persistence/PostgresCandleRepository.cs` — 1分足と全上位時間足ロールアップ、coverage、取込台帳をPostgreSQLで管理; `ICandleRepository`実装; `NpgsqlDataSource`。
 - `BtcApi/Infrastructure/Streaming/BrowserPriceHub.cs` — 最新価格保持とブラウザー配信; `GetCurrentPrice`, `PublishAsync`, `AcceptBrowserConnectionAsync`; ブラウザーWebSocket。
 
 ## Web client
@@ -49,7 +49,7 @@
 - `BtcApi/wwwroot/js/chart-context.test.js` — チャート右クリックメニューのブラウザーテスト; `runChartContextTests`; DOM。
 - `BtcApi/wwwroot/js/demo-trading.js` — デモ残高・成行売買・指値約定; `availableAmount`, `executeBuy`, `executeSell`, `fillLimitOrders`; I/O: なし。
 - `BtcApi/wwwroot/js/demo-trading.test.js` — デモ取引ロジックのブラウザーテスト; `runDemoTradingTests`; I/O: なし。
-- `BtcApi/wwwroot/js/main.js` — 通常チャートと専用デモ画面を制御; `BtcApiClient`, `CandleAggregator`, `CandleChartManager`; `/demo`, `/ws/price`, `/api/market/*`, `localStorage` (`btc-demo-session-v1`, `btc-chart-symbol`)。
+- `BtcApi/wwwroot/js/main.js` — 通常チャートと専用デモ画面を制御し日足・週足は全履歴を初回取得; `BtcApiClient`, `CandleAggregator`, `CandleChartManager`; `/demo`, `/ws/price`, `/api/market/*`, `localStorage` (`btc-demo-session-v1`, `btc-chart-symbol`)。
 
 ## Host / configuration
 - `BtcApi/Program.cs` — Webアプリ起動、Basic認証とルート登録; `create-demo-user`, `MapBtcEndpoints`, `MapDemoEndpoints`; PostgreSQL設定。
@@ -62,7 +62,7 @@
 - `BtcApi/Properties/launchSettings.json` — HTTP/HTTPS開発プロファイル; `http://localhost:5081`, `https://localhost:7206`; `ASPNETCORE_ENVIRONMENT`。
 - `docker-compose.yml` — `api`と`db`の起動設定; `.env`の`POSTGRES_PASSWORD`, `ConnectionStrings__MarketData`, `HistoricalData__StartDate`, PostgreSQL volume `pgdata`。
 - `docs/DEMO_TRADING.md` — デモ取引、Basic認証、DB接続設定、履歴データ運用を記載; Docker Compose、Render、`/demo`。
-- `docs/DB_STRUCTURE.html` — PostgreSQLテーブル構成図; `btc_candles`の日足/週足ロールアップ、`candle_import_months`, `candle_import_days`, `candle_rollup_backfills`, `demo_users`; 接続・取込設定。
+- `docs/DB_STRUCTURE.html` — PostgreSQLテーブル構成図; `btc_candles`の全上位時間足ロールアップ、`candle_import_months`, `candle_import_days`, `candle_rollup_backfills`, `demo_users`; 接続・取込設定。
 
 ## Tests
 - `BtcApi.Tests/BtcApi.Tests.csproj` — xUnitテストプロジェクト; `BtcApi`を参照; `Microsoft.NET.Test.Sdk`, `xunit`。

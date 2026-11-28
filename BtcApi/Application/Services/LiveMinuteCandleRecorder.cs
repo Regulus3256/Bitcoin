@@ -76,8 +76,7 @@ public sealed class LiveMinuteCandleRecorder : ILiveCandleRecorder
                     try
                     {
                         if (_lastRollupRefreshMinute.TryGetValue(instrument.Code, out refreshedMinute)
-                            && (refreshedMinute / 86_400 != minuteStart / 86_400
-                                || refreshedMinute / 604_800 != minuteStart / 604_800))
+                            && refreshedMinute / 3_600 != minuteStart / 3_600)
                         {
                             await _repository.RefreshRollupsAsync(instrument, refreshedMinute, cancellationToken);
                         }
@@ -87,7 +86,7 @@ public sealed class LiveMinuteCandleRecorder : ILiveCandleRecorder
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        _logger.LogError(ex, "日足・週足ロールアップの更新に失敗しました");
+                        _logger.LogError(ex, "上位時間足ロールアップの更新に失敗しました");
                     }
                 }
             }

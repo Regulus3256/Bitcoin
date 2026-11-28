@@ -11,6 +11,7 @@ namespace BtcApi.Infrastructure.Persistence;
 /// <summary>PostgreSQLへローソク足とアーカイブ取込状態を保存します。</summary>
 public sealed class PostgresCandleRepository : ICandleRepository
 {
+    private const int RollupVersion = 2;
     private readonly NpgsqlDataSource _dataSource;
     private readonly ConcurrentDictionary<string, byte> _rollupsReady = new(StringComparer.OrdinalIgnoreCase);
 
@@ -61,8 +62,12 @@ public sealed class PostgresCandleRepository : ICandleRepository
 
             CREATE TABLE IF NOT EXISTS candle_rollup_backfills (
                 symbol text PRIMARY KEY,
-                completed_at timestamptz NOT NULL DEFAULT now()
+                completed_at timestamptz NOT NULL DEFAULT now(),
+                rollup_version integer NOT NULL DEFAULT 0
             );
+
+            ALTER TABLE candle_rollup_backfills
+                ADD COLUMN IF NOT EXISTS rollup_version integer NOT NULL DEFAULT 0;
             """;
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -80,7 +85,7 @@ public sealed class PostgresCandleRepository : ICandleRepository
         int limit,
         CancellationToken cancellationToken)
     {
-        if (timeframe.KrakenIntervalMinutes >= 1440 && _rollupsReady.ContainsKey(instrument.Code))
+        if (timeframe.KrakenIntervalMinutes >= 60 && _rollupsReady.ContainsKey(instrument.Code))
         {
             var rollups = await GetStoredRollupsAsync(
                 instrument, timeframe, from, through, before, limit, cancellationToken);
@@ -162,15 +167,11 @@ public sealed class PostgresCandleRepository : ICandleRepository
         long minuteTime,
         CancellationToken cancellationToken)
     {
-        var dayStart = FloorToBucket(minuteTime, 86_400);
-        var weekStart = FloorToBucket(minuteTime, 604_800);
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await RefreshRollupIntervalAsync(
-            connection, transaction, instrument, 1, 1440, 86_400, dayStart, dayStart + 86_400, cancellationToken);
-        await RefreshRollupIntervalAsync(
-            connection, transaction, instrument, 1440, 10080, 604_800, weekStart, weekStart + 604_800, cancellationToken);
+        await RefreshRollupsForRangeAsync(
+            connection, transaction, instrument, minuteTime, minuteTime + 60, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }
@@ -187,9 +188,11 @@ public sealed class PostgresCandleRepository : ICandleRepository
         }
 
         await using (var check = new NpgsqlCommand(
-            "SELECT EXISTS (SELECT 1 FROM candle_rollup_backfills WHERE symbol = $1);", connection))
+            "SELECT EXISTS (SELECT 1 FROM candle_rollup_backfills WHERE symbol = $1 AND rollup_version >= $2);",
+            connection))
         {
             check.Parameters.AddWithValue(instrument.ArchiveSymbol);
+            check.Parameters.AddWithValue(RollupVersion);
             if ((bool)(await check.ExecuteScalarAsync(cancellationToken) ?? false))
             {
                 _rollupsReady.TryAdd(instrument.Code, 0);
@@ -198,14 +201,25 @@ public sealed class PostgresCandleRepository : ICandleRepository
         }
 
         await RefreshRollupIntervalAsync(
-            connection, null, instrument, 1, 1440, 86_400, null, null, cancellationToken);
+            connection, null, instrument, 1, 60, 3_600, null, null, cancellationToken);
+        await RefreshRollupIntervalAsync(
+            connection, null, instrument, 60, 240, 14_400, null, null, cancellationToken);
+        await RefreshRollupIntervalAsync(
+            connection, null, instrument, 60, 1440, 86_400, null, null, cancellationToken);
         await RefreshRollupIntervalAsync(
             connection, null, instrument, 1440, 10080, 604_800, null, null, cancellationToken);
 
         await using var mark = new NpgsqlCommand(
-            "INSERT INTO candle_rollup_backfills (symbol) VALUES ($1) ON CONFLICT (symbol) DO NOTHING;",
+            """
+            INSERT INTO candle_rollup_backfills (symbol, rollup_version, completed_at)
+            VALUES ($1, $2, now())
+            ON CONFLICT (symbol) DO UPDATE SET
+                rollup_version = EXCLUDED.rollup_version,
+                completed_at = EXCLUDED.completed_at;
+            """,
             connection);
         mark.Parameters.AddWithValue(instrument.ArchiveSymbol);
+        mark.Parameters.AddWithValue(RollupVersion);
         await mark.ExecuteNonQueryAsync(cancellationToken);
         _rollupsReady.TryAdd(instrument.Code, 0);
     }
@@ -269,13 +283,21 @@ public sealed class PostgresCandleRepository : ICandleRepository
         long through,
         CancellationToken cancellationToken)
     {
+        var hourStart = FloorToBucket(from, 3_600);
+        var hourEnd = FloorToBucket(through - 1, 3_600) + 3_600;
+        var fourHourStart = FloorToBucket(from, 14_400);
+        var fourHourEnd = FloorToBucket(through - 1, 14_400) + 14_400;
         var dayStart = FloorToBucket(from, 86_400);
         var dayEnd = FloorToBucket(through - 1, 86_400) + 86_400;
         var weekStart = FloorToBucket(from, 604_800);
         var weekEnd = FloorToBucket(through - 1, 604_800) + 604_800;
 
         await RefreshRollupIntervalAsync(
-            connection, transaction, instrument, 1, 1440, 86_400, dayStart, dayEnd, cancellationToken);
+            connection, transaction, instrument, 1, 60, 3_600, hourStart, hourEnd, cancellationToken);
+        await RefreshRollupIntervalAsync(
+            connection, transaction, instrument, 60, 240, 14_400, fourHourStart, fourHourEnd, cancellationToken);
+        await RefreshRollupIntervalAsync(
+            connection, transaction, instrument, 60, 1440, 86_400, dayStart, dayEnd, cancellationToken);
         await RefreshRollupIntervalAsync(
             connection, transaction, instrument, 1440, 10080, 604_800, weekStart, weekEnd, cancellationToken);
     }

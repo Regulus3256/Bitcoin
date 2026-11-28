@@ -49,11 +49,11 @@ public sealed class LiveMinuteCandleRecorderTests
     }
 
     [Fact]
-    public async Task RecordAsync_RefreshesCompletedDayBeforeStartingNewDay()
+    public async Task RecordAsync_RefreshesCompletedHourBeforeStartingNewHour()
     {
         var repository = new InMemoryCandleRepository();
         var recorder = new LiveMinuteCandleRecorder(repository, NullLogger<LiveMinuteCandleRecorder>.Instance);
-        var lastMinute = new DateTime(2025, 1, 1, 23, 59, 0, DateTimeKind.Utc);
+        var lastMinute = new DateTime(2025, 1, 1, 10, 59, 0, DateTimeKind.Utc);
         var nextDay = lastMinute.AddMinutes(1);
 
         await recorder.RecordAsync(new PriceSnapshot("BTC", 100m, lastMinute), CancellationToken.None);
