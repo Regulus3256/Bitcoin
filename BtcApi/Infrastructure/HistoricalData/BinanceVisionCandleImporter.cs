@@ -12,7 +12,7 @@ public sealed class BinanceVisionCandleImporter : IHistoricalCandleImporter
 {
     private const string ArchiveBaseUrl = "https://data.binance.vision/data/spot";
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ICandleRepository _repository;
+    private readonly ICandleArchiveStore _repository;
     private readonly HistoricalImportOptions _options;
     private readonly ILogger<BinanceVisionCandleImporter> _logger;
 
@@ -23,7 +23,7 @@ public sealed class BinanceVisionCandleImporter : IHistoricalCandleImporter
     /// <param name="logger">進捗と失敗を記録するロガー。</param>
     public BinanceVisionCandleImporter(
         IHttpClientFactory httpClientFactory,
-        ICandleRepository repository,
+        ICandleArchiveStore repository,
         IOptions<HistoricalImportOptions> options,
         ILogger<BinanceVisionCandleImporter> logger)
     {

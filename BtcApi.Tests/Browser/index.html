@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Browser tests</title></head>
+<body>
+<pre id="result">RUNNING</pre>
+<script type="module">
+    import { runDemoTradingTests } from '/js/demo-trading.test.js';
+    import { runReplayCandleBufferTests } from '/js/replay-candle-buffer.test.js';
+    import { runChartContextTests } from '/js/chart-context.test.js';
+    import { runReplayViewTests } from '/js/replay-view.test.js';
+    import { runReplayControllerTests } from '/js/replay-controller.test.js';
+
+    const result = document.getElementById('result');
+    try {
+        const messages = [];
+        for (const test of [runDemoTradingTests, runReplayCandleBufferTests, runChartContextTests, runReplayViewTests, runReplayControllerTests]) {
+            messages.push(await test());
+        }
+        result.textContent = `PASS\n${messages.join('\n')}`;
+        result.dataset.status = 'pass';
+    } catch (error) {
+        result.textContent = `FAIL\n${error.stack ?? error}`;
+        result.dataset.status = 'fail';
+    }
+</script>
+</body>
+</html>

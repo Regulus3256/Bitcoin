@@ -1,4 +1,5 @@
 using BtcApi.Application.Abstractions;
+using BtcApi.Application.Services;
 using BtcApi.Domain.MarketData;
 using BtcApi.Domain.Models;
 using BtcApi.Endpoints;
@@ -25,7 +26,7 @@ public sealed class BtcEndpointsTests
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Services.AddSingleton<ILivePriceHub, UnknownSymbolPriceHub>();
         builder.Services.AddSingleton<IBtcMarketDataService, UnknownSymbolMarketDataService>();
-        builder.Services.AddSingleton<ICandleRepository, InMemoryCandleRepository>();
+        builder.Services.AddSingleton<ICandleReader, InMemoryCandleRepository>();
         await using var app = builder.Build();
         app.MapBtcEndpoints();
         await app.StartAsync();
@@ -37,6 +38,26 @@ public sealed class BtcEndpointsTests
 
         Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
         await app.StopAsync();
+    }
+
+    [Theory]
+    [InlineData("/api/btc/history?range=bogus")]
+    [InlineData("/api/market/BTC/history?range=bogus")]
+    public async Task History_InvalidRangeReturnsBadRequest(string path)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<ICandleReader, InMemoryCandleRepository>();
+        builder.Services.AddSingleton<IBtcMarketDataService, CachedBtcMarketDataService>();
+        await using var app = builder.Build();
+        app.MapBtcEndpoints();
+        await app.StartAsync();
+        var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+        using var client = new HttpClient { BaseAddress = new Uri(addresses.Addresses.Single()) };
+        using var response = await client.GetAsync(path);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("timeframe", await response.Content.ReadAsStringAsync());
     }
 
     private sealed class UnknownSymbolPriceHub : ILivePriceHub

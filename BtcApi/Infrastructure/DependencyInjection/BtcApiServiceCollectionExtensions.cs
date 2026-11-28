@@ -15,6 +15,20 @@ namespace BtcApi.Infrastructure.DependencyInjection;
 /// <summary>アプリケーションサービスとインフラストラクチャ接続を登録します。</summary>
 public static class BtcApiServiceCollectionExtensions
 {
+    /// <summary>明示的に許可されたオリジンからのAPI読み取りを許可します。</summary>
+    public static IServiceCollection AddBtcCors(this IServiceCollection services, IConfiguration configuration)
+    {
+        var origins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+        services.AddCors(options => options.AddDefaultPolicy(policy =>
+        {
+            if (origins.Length > 0)
+            {
+                policy.WithOrigins(origins).WithMethods("GET").AllowAnyHeader();
+            }
+        }));
+        return services;
+    }
+
     /// <summary>マーケットデータ、キャッシュ、価格Hub、Kraken配信をDIへ登録します。</summary>
     /// <param name="services">登録先のサービスコレクション。</param>
     /// <returns>登録を追加した同じサービスコレクション。</returns>
@@ -47,6 +61,10 @@ public static class BtcApiServiceCollectionExtensions
             client.Timeout = TimeSpan.FromMinutes(2);
         });
         services.AddSingleton<ICandleRepository, PostgresCandleRepository>();
+        services.AddSingleton<ICandleReader>(provider => provider.GetRequiredService<ICandleRepository>());
+        services.AddSingleton<ILiveCandleStore>(provider => provider.GetRequiredService<ICandleRepository>());
+        services.AddSingleton<ICandleMaintenance>(provider => provider.GetRequiredService<ICandleRepository>());
+        services.AddSingleton<ICandleArchiveStore>(provider => provider.GetRequiredService<ICandleRepository>());
         services.AddSingleton<IHistoricalCandleImporter, BinanceVisionCandleImporter>();
         services.AddSingleton<KrakenOhlcClient>();
         services.AddSingleton<IKrakenOhlcClient>(provider => provider.GetRequiredService<KrakenOhlcClient>());

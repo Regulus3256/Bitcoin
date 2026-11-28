@@ -12,11 +12,7 @@ if (isCreateDemoUserCommand)
 }
 
 builder.Services.AddBtcApiServices(builder.Configuration);
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
-});
+builder.Services.AddBtcCors(builder.Configuration);
 
 var app = builder.Build();
 app.UseCors();

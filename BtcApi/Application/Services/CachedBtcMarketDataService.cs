@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using BtcApi.Application.Abstractions;
 using BtcApi.Domain.MarketData;
@@ -10,14 +9,21 @@ namespace BtcApi.Application.Services;
 /// <summary>履歴リクエストを正規化し、プロバイダー接続の前後にメモリキャッシュを適用します。</summary>
 public sealed class CachedBtcMarketDataService : IBtcMarketDataService
 {
-    private readonly ICandleRepository _repository;
+    private readonly ICandleReader _repository;
     private readonly IMemoryCache _cache;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _rangeLocks = new();
+    private readonly Dictionary<string, QueryLock> _queryLocks = new();
+    private readonly object _queryLocksSync = new();
+
+    private sealed class QueryLock
+    {
+        public readonly SemaphoreSlim Semaphore = new(1, 1);
+        public int Users;
+    }
 
     /// <summary>過去データ取得サービスを生成します。</summary>
-    /// <param name="ohlcClient">ローソク足取得を担当するプロバイダー接続。</param>
+    /// <param name="repository">ローソク足の読み取り先。</param>
     /// <param name="cache">外部APIへの重複アクセスを減らすキャッシュ。</param>
-    public CachedBtcMarketDataService(ICandleRepository repository, IMemoryCache cache)
+    public CachedBtcMarketDataService(ICandleReader repository, IMemoryCache cache)
     {
         _repository = repository;
         _cache = cache;
@@ -38,10 +44,22 @@ public sealed class CachedBtcMarketDataService : IBtcMarketDataService
             return cached;
         }
 
-        var rangeLock = _rangeLocks.GetOrAdd($"{instrument.Code}:{timeframe.Key}", _ => new SemaphoreSlim(1, 1));
-        await rangeLock.WaitAsync(cancellationToken);
+        QueryLock queryLock;
+        lock (_queryLocksSync)
+        {
+            if (!_queryLocks.TryGetValue(cacheKey, out queryLock!))
+            {
+                queryLock = new QueryLock();
+                _queryLocks.Add(cacheKey, queryLock);
+            }
+            queryLock.Users++;
+        }
+
+        var acquired = false;
         try
         {
+            await queryLock.Semaphore.WaitAsync(cancellationToken);
+            acquired = true;
             if (_cache.TryGetValue(cacheKey, out cached) && cached is not null)
             {
                 return cached;
@@ -53,7 +71,18 @@ public sealed class CachedBtcMarketDataService : IBtcMarketDataService
         }
         finally
         {
-            rangeLock.Release();
+            if (acquired)
+            {
+                queryLock.Semaphore.Release();
+            }
+            lock (_queryLocksSync)
+            {
+                if (--queryLock.Users == 0)
+                {
+                    _queryLocks.Remove(cacheKey);
+                    queryLock.Semaphore.Dispose();
+                }
+            }
         }
     }
 }

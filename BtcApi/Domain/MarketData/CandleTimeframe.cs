@@ -17,12 +17,14 @@ public sealed record CandleTimeframe(string Key, int KrakenIntervalMinutes, int 
             ["1w"] = new("1w", 10080, 52, TimeSpan.FromMinutes(15))
         };
 
-    /// <summary>APIキーを時間足定義に変換します。未対応の値は1時間足として扱います。</summary>
+    /// <summary>APIキーを時間足定義に変換します。省略時は1時間足を使用します。</summary>
     /// <param name="key">呼び出し元から渡された時間足キー。</param>
     /// <returns>対応する時間足定義。</returns>
     public static CandleTimeframe FromKey(string? key)
     {
         var normalized = string.IsNullOrWhiteSpace(key) ? "1h" : key.Trim();
-        return Supported.TryGetValue(normalized, out var timeframe) ? timeframe : Supported["1h"];
+        return Supported.TryGetValue(normalized, out var timeframe)
+            ? timeframe
+            : throw new ArgumentException("The requested timeframe is not supported.", nameof(key));
     }
 }

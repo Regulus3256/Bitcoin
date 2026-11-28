@@ -4,7 +4,7 @@
 
 ## Application
 - `BtcApi/Application/Abstractions/IBtcMarketDataService.cs` — 過去足取得契約; `GetHistoryAsync`; I/O: なし。
-- `BtcApi/Application/Abstractions/ICandleRepository.cs` — 足データと取込状態の永続化契約; `InitializeAsync`, `GetCandlesAsync`, `GetCoverageAsync`, `Upsert*`, `Import*`; DB実装に依存。
+- `BtcApi/Application/Abstractions/ICandleRepository.cs` — ローソク足の読み取り・ライブ更新・起動処理・取込ごとの永続化契約と複合契約; `ICandleReader`, `ILiveCandleStore`, `ICandleMaintenance`, `ICandleArchiveStore`, `ICandleRepository`。
 - `BtcApi/Application/Abstractions/IHistoricalCandleImporter.cs` — 未取込の過去足取込契約; `ImportMissingMonthsAsync`; I/O: なし。
 - `BtcApi/Application/Abstractions/IKrakenOhlcClient.cs` — Kraken過去OHLC取得契約; `GetCandlesAsync`; I/O: なし。
 - `BtcApi/Application/Abstractions/IKrakenRecentCandleClient.cs` — Kraken直近1分足取得契約; `GetRecentMinutesAsync`; I/O: なし。
@@ -37,6 +37,7 @@
 - `BtcApi/Infrastructure/Persistence/CandleDatabaseStartupService.cs` — DB初期化後の認証スキーマ作成・1時間足以上のバックフィル・過去足取込起動; `StartAsync`, `StopAsync`; repositories、Importer、Kraken client。
 - `BtcApi/Infrastructure/Persistence/PostgresDemoUserRepository.cs` — `demo_users`の作成・検索・追加; `IDemoUserRepository`; PostgreSQL。
 - `BtcApi/Infrastructure/Persistence/PostgresCandleRepository.cs` — 1分足と全上位時間足ロールアップ、coverage、取込台帳をPostgreSQLで管理; `ICandleRepository`実装; `NpgsqlDataSource`。
+- `BtcApi/Infrastructure/Persistence/PostgresCandleRepository.Rollups.cs` — 上位時間足の保存・再集計・バックフィル; `PostgresCandleRepository`の部分クラス。
 - `BtcApi/Infrastructure/Streaming/BrowserPriceHub.cs` — 最新価格保持とブラウザー配信; `GetCurrentPrice`, `PublishAsync`, `AcceptBrowserConnectionAsync`; ブラウザーWebSocket。
 
 ## Web client
@@ -51,10 +52,14 @@
 - `BtcApi/wwwroot/js/demo-trading.test.js` — デモ取引ロジックのブラウザーテスト; `runDemoTradingTests`; I/O: なし。
 - `BtcApi/wwwroot/js/replay-candle-buffer.js` — デモ用1分足のページ取得・先読みを管理; `ReplayCandleBuffer`; 注入された履歴取得関数。
 - `BtcApi/wwwroot/js/replay-candle-buffer.test.js` — デモ履歴バッファのブラウザーテスト; `runReplayCandleBufferTests`; I/O: なし。
+- `BtcApi/wwwroot/js/replay-view.js` — デモ口座、注文と取引履歴のDOM描画; `renderReplaySession`。
+- `BtcApi/wwwroot/js/replay-view.test.js` — デモ画面描画のブラウザーテスト; `runReplayViewTests`。
+- `BtcApi/wwwroot/js/replay-controller.js` — デモ再生位置、指値約定と集約を更新; `advanceReplaySession`。
+- `BtcApi/wwwroot/js/replay-controller.test.js` — デモ再生の状態更新テスト; `runReplayControllerTests`。
 - `BtcApi/wwwroot/js/main.js` — 通常チャートとデモ再生UIを制御し日足120本・週足60本から過去足を段階取得; `BtcApiClient`, `CandleAggregator`, `CandleChartManager`, `ReplayCandleBuffer`; `/demo`, `/ws/price`, `/api/market/*`, `localStorage` (`btc-demo-session-v1`, `btc-chart-symbol`)。
 
 ## Host / configuration
-- `BtcApi/Program.cs` — Webアプリ起動、Basic認証とルート登録; `create-demo-user`, `MapBtcEndpoints`, `MapDemoEndpoints`; PostgreSQL設定。
+- `BtcApi/Program.cs` — Webアプリ起動、CORS・Basic認証とルート登録; `create-demo-user`, `MapBtcEndpoints`, `MapDemoEndpoints`; PostgreSQL、`Cors:AllowedOrigins`設定。
 - `BtcApi/BtcApi.csproj` — .NET 9 Webプロジェクト定義とデモHTMLの出力・発行設定; `Microsoft.AspNetCore.OpenApi`, `Npgsql`。
 - `BtcApi/BtcApi.http` — ローカルHTTPリクエスト例; `GET /weatherforecast/`; `http://localhost:5081`。
 - `BtcApi/Dockerfile` — .NET 9 APIのビルド・実行イメージ; SDK/ASP.NET runtime、`PORT`。
@@ -68,6 +73,9 @@
 
 ## Tests
 - `BtcApi.Tests/BtcApi.Tests.csproj` — xUnitテストプロジェクト; `BtcApi`を参照; `Microsoft.NET.Test.Sdk`, `xunit`。
+- `BtcApi.Tests/Browser/index.html`, `BtcApi.Tests/Browser/run-tests.mjs` — ChromiumでJavaScriptテストを一括実行; Node.js、Chromium。
+- `BtcApi.Tests/Infrastructure/Persistence/PostgresCandleRepositoryTests.cs` — 専用PostgreSQL上で取込・ロールアップ・ロールバックを検証; `BTC_TEST_POSTGRES`。
+- `BtcApi.Tests/Infrastructure/DependencyInjection/CorsTests.cs` — CORSの許可オリジン・メソッドのテスト。
 - `BtcApi.Tests/Application/CachedBtcMarketDataServiceTests.cs` — キャッシュ履歴サービスのテスト; `CachedBtcMarketDataServiceTests`; InMemory Repository。
 - `BtcApi.Tests/Application/LiveMinuteCandleRecorderTests.cs` — ライブ1分足記録のテスト; `LiveMinuteCandleRecorderTests`; InMemory Repository。
 - `BtcApi.Tests/Domain/CandleTimeframeTests.cs` — 時間足キー定義のテスト; `CandleTimeframeTests`; I/O: なし。

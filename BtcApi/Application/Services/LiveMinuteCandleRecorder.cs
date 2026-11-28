@@ -9,7 +9,7 @@ namespace BtcApi.Application.Services;
 public sealed class LiveMinuteCandleRecorder : ILiveCandleRecorder
 {
     private static readonly TimeSpan PersistInterval = TimeSpan.FromSeconds(5);
-    private readonly ICandleRepository _repository;
+    private readonly ILiveCandleStore _repository;
     private readonly ILogger<LiveMinuteCandleRecorder> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<string, CandleData> _currentCandles = new(StringComparer.OrdinalIgnoreCase);
@@ -18,7 +18,7 @@ public sealed class LiveMinuteCandleRecorder : ILiveCandleRecorder
 
     /// <summary>ライブ足記録サービスを生成します。</summary>
     /// <param name="repository">1分足の永続化先。</param>
-    public LiveMinuteCandleRecorder(ICandleRepository repository, ILogger<LiveMinuteCandleRecorder> logger)
+    public LiveMinuteCandleRecorder(ILiveCandleStore repository, ILogger<LiveMinuteCandleRecorder> logger)
     {
         _repository = repository;
         _logger = logger;

@@ -7,7 +7,7 @@ namespace BtcApi.Infrastructure.Persistence;
 /// <summary>DBスキーマ作成、直近足補完、過去アーカイブ取込を起動時に行います。</summary>
 public sealed class CandleDatabaseStartupService : IHostedService
 {
-    private readonly ICandleRepository _repository;
+    private readonly ICandleMaintenance _repository;
     private readonly IDemoUserRepository _demoUsers;
     private readonly IHistoricalCandleImporter _importer;
     private readonly IKrakenRecentCandleClient _recentCandleClient;
@@ -22,7 +22,7 @@ public sealed class CandleDatabaseStartupService : IHostedService
     /// <param name="lifetime">ホストの起動・終了通知。</param>
     /// <param name="logger">初期化と取込状態を記録するロガー。</param>
     public CandleDatabaseStartupService(
-        ICandleRepository repository,
+        ICandleMaintenance repository,
         IDemoUserRepository demoUsers,
         IHistoricalCandleImporter importer,
         IKrakenRecentCandleClient recentCandleClient,

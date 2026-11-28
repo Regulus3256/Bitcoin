@@ -1,4 +1,7 @@
 using BtcApi.Application.Services;
+using BtcApi.Application.Abstractions;
+using BtcApi.Domain.MarketData;
+using BtcApi.Domain.Models;
 using BtcApi.Tests.TestDoubles;
 using Microsoft.Extensions.Caching.Memory;
 using Xunit;
@@ -64,5 +67,71 @@ public sealed class CachedBtcMarketDataServiceTests
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             service.GetHistoryAsync("DOGE", "1h", null, null, null, null, CancellationToken.None));
         Assert.Equal(0, repository.GetCandlesCallCount);
+    }
+
+    [Fact]
+    public async Task GetHistoryAsync_CoalescesIdenticalQueriesButAllowsDifferentPages()
+    {
+        var repository = new BlockingReader();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var service = new CachedBtcMarketDataService(repository, cache);
+        var first = service.GetHistoryAsync("BTC", "1h", null, null, 100, 24, CancellationToken.None);
+        await repository.FirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var duplicate = service.GetHistoryAsync("BTC", "1h", null, null, 100, 24, CancellationToken.None);
+        var otherPage = service.GetHistoryAsync("BTC", "1h", null, null, 200, 24, CancellationToken.None);
+
+        try
+        {
+            await repository.SecondStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(2, repository.CallCount);
+            Assert.False(duplicate.IsCompleted);
+        }
+        finally
+        {
+            repository.Release.TrySetResult();
+        }
+
+        await Task.WhenAll(first, duplicate, otherPage);
+        Assert.Equal(2, repository.CallCount);
+    }
+
+    [Fact]
+    public async Task GetHistoryAsync_CancelledWaiterDoesNotPreventLaterRequests()
+    {
+        var repository = new BlockingReader();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        using var cancellation = new CancellationTokenSource();
+        var service = new CachedBtcMarketDataService(repository, cache);
+        var first = service.GetHistoryAsync("BTC", "1h", null, null, 100, 24, CancellationToken.None);
+        await repository.FirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var cancelled = service.GetHistoryAsync("BTC", "1h", null, null, 100, 24, cancellation.Token);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        repository.Release.SetResult();
+        await first;
+        await service.GetHistoryAsync("BTC", "1h", null, null, 100, 24, CancellationToken.None);
+        Assert.Equal(1, repository.CallCount);
+    }
+
+    private sealed class BlockingReader : ICandleReader
+    {
+        private int _calls;
+        public int CallCount => _calls;
+        public TaskCompletionSource FirstStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<CandleData[]> GetCandlesAsync(MarketInstrument instrument, CandleTimeframe timeframe,
+            long? from, long? through, long? before, int limit, CancellationToken cancellationToken)
+        {
+            var call = Interlocked.Increment(ref _calls);
+            if (call == 1) FirstStarted.TrySetResult();
+            if (call == 2) SecondStarted.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return [];
+        }
+
+        public Task<CandleCoverage> GetCoverageAsync(MarketInstrument instrument, CancellationToken cancellationToken) =>
+            Task.FromResult(new CandleCoverage(0, null, null));
     }
 }

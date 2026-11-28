@@ -1,4 +1,5 @@
 using BtcApi.Application.Abstractions;
+using BtcApi.Domain.MarketData;
 
 namespace BtcApi.Endpoints;
 
@@ -64,6 +65,15 @@ public static class BtcEndpoints
     {
         try
         {
+            CandleTimeframe.FromKey(range);
+        }
+        catch (ArgumentException)
+        {
+            return Results.Problem("The requested timeframe is not supported.", statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
             var candles = await marketData.GetHistoryAsync(symbol, range, from, through, before, limit, cancellationToken);
             return Results.Ok(candles);
         }
@@ -84,7 +94,7 @@ public static class BtcEndpoints
     /// <param name="cancellationToken">DB問い合わせを中断するトークン。</param>
     /// <returns>最古・最新の保存時刻と1分足件数。</returns>
     private static async Task<IResult> GetDataStatus(
-        ICandleRepository repository,
+        ICandleReader repository,
         string? symbol = null,
         CancellationToken cancellationToken = default)
     {

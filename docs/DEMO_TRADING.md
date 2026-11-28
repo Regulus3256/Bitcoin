@@ -11,6 +11,8 @@
 
 過去データはBTCUSDTをUSDの近似として使用します。Krakenの現在価格はBTC/USDのため、USDT/USDの差や取引所間の価格差はデモ結果に残ります。デモ売買は実際の注文を送らず、表示済み1分足の終値で約定します。手数料は現在0.1%です。
 
+履歴APIの`range`は`1m`、`1h`、`4h`、`1d`、`1w`に対応します。省略時は`1h`、未対応の値はHTTP 400です。
+
 ## Dockerで起動
 
 ワークスペースのルートで実行します。
@@ -48,6 +50,23 @@ Invoke-RestMethod http://localhost:8080/api/btc/data-status
 ComposeのPostgreSQLデータは名前付きボリューム`pgdata`に保存されるため、APIイメージを再ビルドしても保持されます。DBを消す`docker compose down -v`は実行しないでください。通常の停止・再起動には`docker compose down`と`docker compose up -d`を使います。
 
 開始日を変更する場合はComposeの`HistoricalData__StartDate`を変更します。既定の2023-01-01では数年分を保存します。実測環境では約203万本で約515MBでした。期間を増やすとDB容量も増えます。
+
+アプリの初期化SQLは`btc_candles`を通常テーブルとして作成し、パーティションは作成・移行しません。既存DBを自動変換することもありません。DB側でパーティションを手動管理している場合は、親テーブル・子テーブル・主キーを別途管理し、スキーマの差異に注意してください。移行する場合は、バックアップ、書き込み停止、データと索引の検証を含む独立した移行計画が必要です。
+
+## 外部オリジンからのアクセス
+
+既定ではCORSによる外部オリジンの許可はありません。同一オリジンの画面からのアクセスには設定不要です。別オリジンのブラウザーから履歴などのGET APIを利用する場合は、例えば環境変数`Cors__AllowedOrigins__0=https://example.com`に許可するオリジンを設定してください。複数ある場合は`__1`、`__2`を追加します。スキーム・ホスト・ポートを正確に指定し、末尾にスラッシュを付けないでください。WebSocketのオリジン制限や認証はこのCORS設定の対象外です。
+
+## テスト
+
+```powershell
+dotnet test .\BtcApi.Tests\BtcApi.Tests.csproj
+node .\BtcApi.Tests\Browser\run-tests.mjs
+```
+
+ブラウザーテストにはNode.jsとChromium系ブラウザー（WindowsではEdgeまたはChrome）が必要です。自動検出できない場合は`BROWSER_PATH`にブラウザー実行ファイルを指定してください。失敗時は終了コードが非ゼロになります。
+
+PostgreSQL統合テストは既定ではスキップされます。専用テストDBの接続文字列を`BTC_TEST_POSTGRES`に指定して`dotnet test .\BtcApi.Tests\BtcApi.Tests.csproj --filter "Category=Integration"`を実行してください。テストは接続先に一意のスキーマを作成して終了時に削除します。実運用DBでは実行しないでください。
 
 ## 無料公開環境の注意
 

@@ -24,10 +24,16 @@ public sealed class CandleTimeframeTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("not-a-range")]
-    public void FromKey_UsesOneHourForMissingOrUnknownKey(string? key)
+    [InlineData(" ")]
+    public void FromKey_UsesOneHourForMissingKey(string? key)
     {
         Assert.Equal("1h", CandleTimeframe.FromKey(key).Key);
+    }
+
+    [Fact]
+    public void FromKey_RejectsUnknownKey()
+    {
+        Assert.Throws<ArgumentException>(() => CandleTimeframe.FromKey("not-a-range"));
     }
 
     [Fact]

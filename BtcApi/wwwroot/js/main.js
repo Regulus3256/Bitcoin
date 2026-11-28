@@ -1,8 +1,10 @@
 import { BtcApiClient } from './api.js?v=20261128-history-cancel';
 import { CandleAggregator } from './aggregator.js';
 import { CandleChartManager } from './chart.js?v=20261113-chart-resize';
-import { availableAmount, demoFeeRate, executeBuy, executeSell, fillLimitOrders } from './demo-trading.js?v=20261126-demo-playback-fix';
+import { availableAmount, executeBuy, executeSell } from './demo-trading.js?v=20261126-demo-playback-fix';
 import { ReplayCandleBuffer } from './replay-candle-buffer.js?v=20261128-replay-buffer-2';
+import { advanceReplaySession } from './replay-controller.js?v=20261128-review';
+import { renderReplaySession } from './replay-view.js?v=20261128-review';
 
 const replayPanel = document.getElementById('replay-panel');
 function elementById(id) {
@@ -57,7 +59,6 @@ let historyRequestController = null;
 let historyRequestId = 0;
 let replayRange = '1m';
 let replayAggregator = new CandleAggregator(60);
-let replayProcessedIndex = -1;
 
 const replayIntervals = {
     '1m': 60,
@@ -228,7 +229,6 @@ function rebuildReplayChart() {
     if (replayContextCandles.length > 0) {
         replayAggregator.seed(replayContextCandles.at(-1));
     }
-    replayProcessedIndex = -1;
     const aggregateCandles = [...replayContextCandles];
     for (let index = 0; index <= replaySession.cursorIndex; index += 1) {
         const candle = replayAggregator.processCandle(replayCandles[index]);
@@ -238,7 +238,6 @@ function rebuildReplayChart() {
         } else {
             aggregateCandles.push(candle);
         }
-        replayProcessedIndex = index;
     }
 
     chartManager.setCandles(aggregateCandles, true, replayWarmupCandles);
@@ -268,17 +267,6 @@ function saveReplaySession(immediate = false) {
     }
 }
 
-function formatUsd(value) {
-    return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function formatQuote(value) {
-    const quoteAsset = currentInstrument?.quoteAsset ?? 'USD';
-    return quoteAsset === 'USD'
-        ? formatUsd(value)
-        : `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${quoteAsset}`;
-}
-
 function currentReplayCandle() {
     return replaySession ? replayCandles[replaySession.cursorIndex] : null;
 }
@@ -288,71 +276,8 @@ function setReplayStatus(message = '') {
         return;
     }
 
-    const candle = currentReplayCandle();
-    if (candle) {
-        const replayTime = new Date((candle.time + 60) * 1000);
-        elementById('replay-clock').textContent = `${replayTime.toISOString().replace('T', ' ').slice(0, 16)} UTC`;
-    }
-
-    const price = candle?.close ?? 0;
-    const baseQuantity = replaySession.baseQuantity ?? replaySession.btc ?? 0;
-    const equity = replaySession.cash + baseQuantity * price;
-    const unrealized = baseQuantity > 0
-        ? baseQuantity * price - replaySession.costBasis
-        : 0;
-
-    elementById('account-cash').textContent = formatQuote(replaySession.cash);
-    elementById('account-base-asset').textContent = currentInstrument?.baseAsset ?? replaySession.symbol;
-    elementById('account-btc').textContent = baseQuantity.toFixed(8);
-    elementById('account-equity').textContent = formatQuote(equity);
-    elementById('account-realized').textContent = formatQuote(replaySession.realizedPnl);
-    elementById('account-unrealized').textContent = formatQuote(unrealized);
-    elementById('order-submit').disabled = !candle;
-
-    if (message) {
-        statusEl.textContent = message;
-    } else if (replayCandleBuffer.exhausted && replaySession.cursorIndex >= replayCandles.length - 1) {
-        statusEl.textContent = '利用可能な最新の履歴に到達しました';
-        pauseReplay();
-    } else if (replaySession.gapCount > 0) {
-        statusEl.textContent = `デモ再生中 | ${currentInstrument?.baseAsset}/${currentInstrument?.quoteAsset} ${formatQuote(price)} | 欠損 ${replaySession.gapCount}区間`;
-    } else {
-        statusEl.textContent = `デモ再生中 | ${currentInstrument?.baseAsset}/${currentInstrument?.quoteAsset} ${formatQuote(price)} | 手数料 ${(demoFeeRate * 100).toFixed(2)}%`;
-    }
-
-    renderTradeLog();
-    renderPendingOrders();
-}
-
-function renderTradeLog() {
-    const tableBody = elementById('trade-log-body');
-    const trades = replaySession?.trades ?? [];
-    if (!trades.length) {
-        tableBody.innerHTML = '<tr><td colspan="7">取引履歴はありません</td></tr>';
-        return;
-    }
-
-    tableBody.innerHTML = [...trades].reverse().slice(0, 100).map(trade => `
-        <tr>
-            <td>${new Date(trade.time * 1000).toISOString().replace('T', ' ').slice(0, 16)}</td>
-            <td>${trade.symbol ?? replaySession.symbol}</td>
-            <td>${trade.side === 'buy' ? '買い' : '売り'}${trade.orderType === 'limit' ? ' (指値)' : ''}</td>
-            <td>${formatQuote(trade.price)}</td>
-            <td>${trade.quantity.toFixed(8)}</td>
-            <td>${formatQuote(trade.fee)}</td>
-            <td>${trade.realizedPnl == null ? '-' : formatQuote(trade.realizedPnl)}</td>
-        </tr>`).join('');
-}
-
-function renderPendingOrders() {
-    const container = elementById('pending-orders');
-    const orders = replaySession?.pendingOrders ?? [];
-    container.innerHTML = orders.map(order => {
-        const amount = order.side === 'buy'
-            ? formatQuote(order.amount)
-            : `${Number(order.amount).toFixed(8)} ${currentInstrument?.baseAsset ?? replaySession.symbol}`;
-        return `<div class="pending-order">${order.side === 'buy' ? '買い' : '売り'}指値 ${formatQuote(order.limitPrice)} / ${amount}<button type="button" data-cancel-order="${order.id}" aria-label="指値注文を取消">取消</button></div>`;
-    }).join('');
+    renderReplaySession(elementById, statusEl, replaySession, currentReplayCandle(), currentInstrument,
+        replayCandleBuffer.exhausted && replaySession.cursorIndex >= replayCandles.length - 1, pauseReplay, message);
 }
 
 function updateTimeframeControlsForReplay(isReplay) {
@@ -442,26 +367,8 @@ function advanceReplay(count = 1) {
         return;
     }
 
-    let skippedMinutes = 0;
-    let filledOrders = 0;
-    const advancedCandles = [];
-    for (let step = 0; step < count && replaySession.cursorIndex < replayCandles.length - 1; step += 1) {
-        replaySession.cursorIndex += 1;
-        const candle = currentReplayCandle();
-        const previousCandle = replayCandles[replaySession.cursorIndex - 1];
-        skippedMinutes += Math.max(0, Math.round((candle.time - previousCandle.time) / 60) - 1);
-        const result = fillLimitOrders(replaySession, candle, replaySession.cursorIndex);
-        Object.assign(replaySession, result.session);
-        filledOrders += result.filled;
-        const aggregateCandle = replayAggregator.processCandle(candle);
-        const previousAggregate = advancedCandles.at(-1);
-        if (previousAggregate?.time === aggregateCandle.time) {
-            advancedCandles[advancedCandles.length - 1] = aggregateCandle;
-        } else {
-            advancedCandles.push(aggregateCandle);
-        }
-        replayProcessedIndex = replaySession.cursorIndex;
-    }
+    const { skippedMinutes, filledOrders, advancedCandles } =
+        advanceReplaySession(replaySession, replayCandles, replayAggregator, count);
 
     if (advancedCandles.length > 0) {
         chartManager.updateCandles(advancedCandles, currentReplayCandle().close);

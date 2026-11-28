@@ -26,6 +26,11 @@ public sealed class BtcApiServiceCollectionExtensionsTests
         var recentClient = provider.GetRequiredService<IKrakenRecentCandleClient>();
 
         Assert.Same(ohlcClient, recentClient);
+        var repository = provider.GetRequiredService<ICandleRepository>();
+        Assert.Same(repository, provider.GetRequiredService<ICandleReader>());
+        Assert.Same(repository, provider.GetRequiredService<ILiveCandleStore>());
+        Assert.Same(repository, provider.GetRequiredService<ICandleMaintenance>());
+        Assert.Same(repository, provider.GetRequiredService<ICandleArchiveStore>());
     }
 
     [Fact]

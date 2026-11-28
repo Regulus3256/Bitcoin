@@ -3,14 +3,9 @@ using BtcApi.Domain.Models;
 
 namespace BtcApi.Application.Abstractions;
 
-/// <summary>過去ローソク足とインポート状態を永続化する契約です。</summary>
-public interface ICandleRepository
+/// <summary>ローソク足の読み取り契約です。</summary>
+public interface ICandleReader
 {
-    /// <summary>必要なテーブルと索引を作成します。</summary>
-    /// <param name="cancellationToken">処理を中断するトークン。</param>
-    /// <returns>スキーマ作成後に完了するタスク。</returns>
-    Task InitializeAsync(CancellationToken cancellationToken);
-
     /// <summary>時間足とカーソルに一致するローソク足を取得します。</summary>
     /// <param name="timeframe">取得対象の時間足。</param>
     /// <param name="from">開始時刻以上を取得するカーソル（省略可）。</param>
@@ -20,21 +15,20 @@ public interface ICandleRepository
     /// <returns>時刻の昇順に並んだローソク足配列。</returns>
     Task<CandleData[]> GetCandlesAsync(MarketInstrument instrument, CandleTimeframe timeframe, long? from, long? through, long? before, int limit, CancellationToken cancellationToken);
 
+    /// <summary>DBに保存されている1分足の収録範囲を取得します。</summary>
+    Task<CandleCoverage> GetCoverageAsync(MarketInstrument instrument, CancellationToken cancellationToken);
+}
+
+/// <summary>ライブ1分足と集約を更新する契約です。</summary>
+public interface ILiveCandleStore
+{
     /// <summary>指定された1分足時刻を含む上位時間足を再集計します。</summary>
     Task RefreshRollupsAsync(MarketInstrument instrument, long minuteTime, CancellationToken cancellationToken);
-
-    /// <summary>既存の1分足から上位時間足を一度だけ作成します。</summary>
-    Task BackfillRollupsAsync(MarketInstrument instrument, CancellationToken cancellationToken);
 
     /// <summary>最新の保存済み1分足を取得します。</summary>
     /// <param name="cancellationToken">処理を中断するトークン。</param>
     /// <returns>最新ローソク足。未保存の場合はnull。</returns>
     Task<CandleData?> GetLatestMinuteCandleAsync(MarketInstrument instrument, CancellationToken cancellationToken);
-
-    /// <summary>DBに保存されている1分足の収録範囲を取得します。</summary>
-    /// <param name="cancellationToken">処理を中断するトークン。</param>
-    /// <returns>保存件数と最古・最新時刻。</returns>
-    Task<CandleCoverage> GetCoverageAsync(MarketInstrument instrument, CancellationToken cancellationToken);
 
     /// <summary>1分足を挿入または更新します。</summary>
     /// <param name="candle">保存するローソク足。</param>
@@ -42,6 +36,16 @@ public interface ICandleRepository
     /// <param name="cancellationToken">処理を中断するトークン。</param>
     /// <returns>保存完了後に完了するタスク。</returns>
     Task UpsertMinuteCandleAsync(MarketInstrument instrument, CandleData candle, string source, CancellationToken cancellationToken);
+}
+
+/// <summary>起動時のスキーマ作成とバックフィルの契約です。</summary>
+public interface ICandleMaintenance
+{
+    /// <summary>必要なテーブルと索引を作成します。</summary>
+    Task InitializeAsync(CancellationToken cancellationToken);
+
+    /// <summary>既存の1分足から上位時間足を一度だけ作成します。</summary>
+    Task BackfillRollupsAsync(MarketInstrument instrument, CancellationToken cancellationToken);
 
     /// <summary>複数の1分足をまとめて挿入または更新します。</summary>
     /// <param name="candles">保存するローソク足。</param>
@@ -49,7 +53,11 @@ public interface ICandleRepository
     /// <param name="cancellationToken">処理を中断するトークン。</param>
     /// <returns>保存完了後に完了するタスク。</returns>
     Task UpsertMinuteCandlesAsync(MarketInstrument instrument, IReadOnlyCollection<CandleData> candles, string source, CancellationToken cancellationToken);
+}
 
+/// <summary>アーカイブ取込とその台帳の契約です。</summary>
+public interface ICandleArchiveStore
+{
     /// <summary>指定月の履歴アーカイブが保存済みかを確認します。</summary>
     /// <param name="month">UTC月の初日。</param>
     /// <param name="cancellationToken">処理を中断するトークン。</param>
@@ -75,4 +83,9 @@ public interface ICandleRepository
     /// <param name="cancellationToken">処理を中断するトークン。</param>
     /// <returns>新規登録されたローソク足数。</returns>
     Task<int> ImportDayAsync(MarketInstrument instrument, DateOnly day, IReadOnlyCollection<CandleData> candles, CancellationToken cancellationToken);
+}
+
+/// <summary>各ローソク足永続化契約を実装するリポジトリです。</summary>
+public interface ICandleRepository : ICandleReader, ILiveCandleStore, ICandleMaintenance, ICandleArchiveStore
+{
 }
