@@ -2,6 +2,7 @@ import { BtcApiClient } from './api.js?v=20261128-history-cancel';
 import { CandleAggregator } from './aggregator.js';
 import { CandleChartManager } from './chart.js?v=20261113-chart-resize';
 import { availableAmount, demoFeeRate, executeBuy, executeSell, fillLimitOrders } from './demo-trading.js?v=20261126-demo-playback-fix';
+import { ReplayCandleBuffer } from './replay-candle-buffer.js?v=20261128-replay-buffer-2';
 
 const replayPanel = document.getElementById('replay-panel');
 function elementById(id) {
@@ -17,6 +18,11 @@ const aggregators = {
     '1w': new CandleAggregator(604800)
 };
 const chartManager = new CandleChartManager('chart', document.getElementById('candle-detail'));
+const replayPageSize = 10000;
+const replayCandleBuffer = new ReplayCandleBuffer(
+    (from, limit, symbol, signal) => api.fetchHistoricalCandles('1m', null, limit, from, null, symbol, signal),
+    replayPageSize);
+const replayCandles = replayCandleBuffer.candles;
 const statusEl = document.getElementById('status');
 const historyLoadingEl = document.getElementById('history-loading');
 const historyLoadingTextEl = historyLoadingEl.querySelector('.history-loading-text');
@@ -35,21 +41,16 @@ const initialVisibleCandles = 250;
 const smaWarmupCandles = 199;
 const olderHistoryPageSize = 120;
 const demoStorageKey = 'btc-demo-session-v1';
-const replayPageSize = 10000;
 let currentRange = '1h';
 let priceSocket;
 let reconnectDelay = 2000;
 let replaySession = null;
-let replayCandles = [];
 let replayWarmupCandles = [];
 let replayContextCandles = [];
 let replayTimer = null;
 let replaySaveTimer = null;
 let replayLastTick = 0;
 let replayAccumulator = 0;
-let replayAdvancing = false;
-let replayPlaybackGeneration = 0;
-let replayHistoryExhausted = false;
 let currentSymbol = 'BTC';
 let currentInstrument = null;
 let historyRequestController = null;
@@ -197,28 +198,6 @@ async function loadHistory(range = currentRange) {
     }
 }
 
-async function loadReplayCandles(from, minimumCount, symbol = currentSymbol) {
-    const candles = [];
-    let cursor = from;
-
-    while (candles.length < minimumCount) {
-        const page = await api.fetchHistoricalCandles('1m', null, replayPageSize, cursor, null, symbol);
-        if (page.length === 0) {
-            break;
-        }
-
-        const validPage = page.filter(candle => candle.time >= cursor);
-        candles.push(...validPage);
-        const lastTime = validPage.at(-1)?.time;
-        if (lastTime === undefined || validPage.length < replayPageSize) {
-            break;
-        }
-        cursor = lastTime + 60;
-    }
-
-    return candles;
-}
-
 async function loadReplayHistoryContext(range, startTime, symbol, signal = undefined) {
     if (replayIntervals[range] === undefined) {
         return { visible: [], warmup: [] };
@@ -332,7 +311,7 @@ function setReplayStatus(message = '') {
 
     if (message) {
         statusEl.textContent = message;
-    } else if (replayHistoryExhausted && replaySession.cursorIndex >= replayCandles.length - 1) {
+    } else if (replayCandleBuffer.exhausted && replaySession.cursorIndex >= replayCandles.length - 1) {
         statusEl.textContent = '利用可能な最新の履歴に到達しました';
         pauseReplay();
     } else if (replaySession.gapCount > 0) {
@@ -402,13 +381,14 @@ async function beginReplaySession(session = null, selectedStartTime = null) {
 
     statusEl.textContent = '開始日からの1分足をDBから読み込んでいます...';
     const symbol = session?.symbol ?? currentSymbol;
-    const candles = await loadReplayCandles(startTime, Math.max(replayPageSize, (session?.cursorIndex ?? 0) + 1), symbol);
+    replayCandleBuffer.reset(startTime, symbol);
+    const candles = await replayCandleBuffer.loadInitial(
+        Math.max(replayPageSize, (session?.cursorIndex ?? 0) + 1));
     if (candles.length === 0) {
         throw new Error('開始日以降の履歴がDBにありません。取込完了後に再試行してください。');
     }
 
-    replayCandles = candles;
-    replayHistoryExhausted = false;
+    await replayCandleBuffer.prefetchIfNeeded(session?.cursorIndex ?? 0);
     const selectedReplayRange = session?.range ?? currentRange;
     const historyContext = await loadReplayHistoryContext(selectedReplayRange, startTime, symbol);
     replayContextCandles = historyContext.visible;
@@ -494,30 +474,12 @@ function advanceReplay(count = 1) {
     saveReplaySession();
 }
 
-async function advanceReplayBars(count, playbackGeneration) {
+function advanceReplayBars(count) {
     if (!replaySession) return;
 
-    const session = replaySession;
     const interval = replayIntervals[replayRange];
     const currentTime = currentReplayCandle().time + 60;
     const targetTime = Math.floor(currentTime / interval) * interval + interval * count;
-    while (replayCandles.at(-1).time < targetTime - 60) {
-        const cursor = replayCandles.at(-1).time + 60;
-        const page = await api.fetchHistoricalCandles('1m', null, replayPageSize, cursor, null, session.symbol);
-        if (replaySession !== session || replayPlaybackGeneration !== playbackGeneration) return;
-        const nextCandles = page.filter(candle => candle.time >= cursor);
-        if (nextCandles.length === 0) {
-            replayHistoryExhausted = true;
-            break;
-        }
-        const previous = replayCandles.at(-1);
-        session.gapCount += nextCandles.reduce((count, candle, index) => {
-            const preceding = index === 0 ? previous : nextCandles[index - 1];
-            return count + (candle.time - preceding.time > 60 ? 1 : 0);
-        }, 0);
-        replayCandles.push(...nextCandles);
-    }
-    if (replaySession !== session || replayPlaybackGeneration !== playbackGeneration) return;
     let targetIndex = replaySession.cursorIndex;
     while (targetIndex + 1 < replayCandles.length && replayCandles[targetIndex + 1].time < targetTime) {
         targetIndex += 1;
@@ -529,44 +491,68 @@ async function advanceReplayBars(count, playbackGeneration) {
         setReplayStatus();
         return;
     }
+    if (replayCandles.length - replaySession.cursorIndex - 1 <= replayPageSize + count) {
+        prefetchReplayHistory(count);
+    }
     advanceReplay(targetIndex - replaySession.cursorIndex);
+    prefetchReplayHistory();
+}
+
+function prefetchReplayHistory(lookaheadCandles = 0) {
+    if (!replaySession || replayCandleBuffer.isLoading || replayCandleBuffer.exhausted) return;
+
+    const session = replaySession;
+    void replayCandleBuffer.prefetchIfNeeded(session.cursorIndex, lookaheadCandles)
+        .then(nextCandles => {
+            if (replaySession !== session) return;
+            if (nextCandles.length > 0) {
+                const previous = replayCandles[replayCandles.length - nextCandles.length - 1];
+                session.gapCount += nextCandles.reduce((count, candle, index) => {
+                    const preceding = index === 0 ? previous : nextCandles[index - 1];
+                    return count + (preceding && candle.time - preceding.time > 60 ? 1 : 0);
+                }, 0);
+            }
+            if (replayCandleBuffer.exhausted && session.cursorIndex >= replayCandles.length - 1) {
+                setReplayStatus();
+            }
+        })
+        .catch(error => {
+            if (replaySession !== session) return;
+            pauseReplay();
+            statusEl.textContent = `履歴データを読み込めません: ${error.message}`;
+        });
 }
 
 function playReplay() {
     if (!replaySession || replayTimer !== null) {
         return;
     }
+    if (replayCandleBuffer.exhausted && replaySession.cursorIndex >= replayCandles.length - 1) {
+        setReplayStatus();
+        return;
+    }
 
     const speed = Number(elementById('replay-speed').value);
     replaySession.speed = speed;
     elementById('replay-play').textContent = '一時停止';
-    replayHistoryExhausted = false;
-    const playbackGeneration = ++replayPlaybackGeneration;
     replayLastTick = performance.now();
     replayAccumulator = 0;
+    prefetchReplayHistory();
     replayTimer = window.setInterval(() => {
         const now = performance.now();
         replayAccumulator += ((now - replayLastTick) / 1000) * Number(elementById('replay-speed').value);
         replayLastTick = now;
         const barsToAdvance = Math.floor(replayAccumulator);
-        if (barsToAdvance > 0 && !replayAdvancing) {
+        if (barsToAdvance > 0) {
+            if (replayCandleBuffer.isLoading && replaySession.cursorIndex >= replayCandles.length - 1) return;
             replayAccumulator -= barsToAdvance;
-            replayAdvancing = true;
-            advanceReplayBars(barsToAdvance, playbackGeneration)
-                .catch(error => {
-                    if (replayPlaybackGeneration === playbackGeneration) {
-                        pauseReplay();
-                        statusEl.textContent = `履歴データを読み込めません: ${error.message}`;
-                    }
-                })
-                .finally(() => { replayAdvancing = false; });
+            advanceReplayBars(barsToAdvance);
         }
     }, 50);
     saveReplaySession(true);
 }
 
 function pauseReplay() {
-    replayPlaybackGeneration += 1;
     if (replayTimer !== null) {
         window.clearInterval(replayTimer);
         replayTimer = null;
@@ -711,7 +697,7 @@ function bindReplayControls() {
     elementById('replay-reset').addEventListener('click', () => {
         pauseReplay();
         replaySession = null;
-        replayCandles = [];
+        replayCandleBuffer.reset();
         saveReplaySession(true);
         window.location.assign('/');
     });
