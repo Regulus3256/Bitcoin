@@ -90,15 +90,21 @@ public sealed class PostgresCandleRepository : ICandleRepository
             grouped AS (
                 SELECT
                     floor(extract(epoch FROM open_time) / ($2::bigint * 60))::bigint * ($2::bigint * 60) AS candle_time,
-                    (array_agg(open ORDER BY open_time ASC))[1] AS candle_open,
+                    min(open_time) AS first_candle_time,
+                    max(open_time) AS last_candle_time,
                     max(high) AS candle_high,
                     min(low) AS candle_low,
-                    (array_agg(close ORDER BY open_time DESC))[1] AS candle_close,
                     sum(volume) AS candle_volume
                 FROM candidates
                 GROUP BY candle_time
             )
-            SELECT candle_time, candle_open, candle_high, candle_low, candle_close, candle_volume
+            SELECT
+                grouped.candle_time,
+                (SELECT open FROM btc_candles WHERE symbol = $1 AND interval_minutes = 1 AND open_time = grouped.first_candle_time) AS candle_open,
+                grouped.candle_high,
+                grouped.candle_low,
+                (SELECT close FROM btc_candles WHERE symbol = $1 AND interval_minutes = 1 AND open_time = grouped.last_candle_time) AS candle_close,
+                grouped.candle_volume
             FROM grouped
             ORDER BY candle_time {sortDirection}
             LIMIT $6;

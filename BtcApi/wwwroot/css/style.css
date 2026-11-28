@@ -315,6 +315,40 @@ h1 {
     box-shadow: 0 0 18px rgba(80, 125, 255, 0.45);
 }
 
+.history-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 0 11px;
+    border: 1px solid #326477;
+    border-radius: 999px;
+    background: rgba(15, 47, 62, 0.88);
+    color: #b9f4f3;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.history-loading-spinner {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    border: 2px solid rgba(185, 244, 243, 0.28);
+    border-top-color: #72e1d4;
+    border-radius: 50%;
+    animation: history-loading-spin 0.8s linear infinite;
+}
+
+@keyframes history-loading-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .history-loading-spinner {
+        animation-duration: 2s;
+    }
+}
+
 .replay-panel {
     margin: 0 0 14px;
     padding: 14px 16px;

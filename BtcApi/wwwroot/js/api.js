@@ -12,14 +12,14 @@ export class BtcApiClient {
         return Number(data.priceUsd);
     }
 
-    async fetchHistoricalCandles(range = '1h', before = null, limit = null, from = null, through = null, symbol = 'BTC') {
+    async fetchHistoricalCandles(range = '1h', before = null, limit = null, from = null, through = null, symbol = 'BTC', signal = undefined) {
         const params = new URLSearchParams({ range });
         if (before != null) params.set('before', String(before));
         if (limit != null) params.set('limit', String(limit));
         if (from != null) params.set('from', String(from));
         if (through != null) params.set('through', String(through));
 
-        const response = await fetch(`/api/market/${encodeURIComponent(symbol)}/history?${params.toString()}`);
+        const response = await fetch(`/api/market/${encodeURIComponent(symbol)}/history?${params.toString()}`, { signal });
         if (!response.ok) {
             throw new Error(`HTTP Error: status ${response.status}`);
         }

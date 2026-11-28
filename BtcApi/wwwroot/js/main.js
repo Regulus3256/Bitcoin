@@ -1,4 +1,4 @@
-import { BtcApiClient } from './api.js';
+import { BtcApiClient } from './api.js?v=20261128-history-cancel';
 import { CandleAggregator } from './aggregator.js';
 import { CandleChartManager } from './chart.js?v=20261113-chart-resize';
 import { availableAmount, demoFeeRate, executeBuy, executeSell, fillLimitOrders } from './demo-trading.js?v=20261126-demo-playback-fix';
@@ -18,6 +18,8 @@ const aggregators = {
 };
 const chartManager = new CandleChartManager('chart', document.getElementById('candle-detail'));
 const statusEl = document.getElementById('status');
+const historyLoadingEl = document.getElementById('history-loading');
+const historyLoadingTextEl = historyLoadingEl.querySelector('.history-loading-text');
 const replayStatusEl = elementById('replay-message');
 if (replayStatusEl) {
     new MutationObserver(() => { replayStatusEl.textContent = statusEl.textContent; })
@@ -49,6 +51,8 @@ let replayPlaybackGeneration = 0;
 let replayHistoryExhausted = false;
 let currentSymbol = 'BTC';
 let currentInstrument = null;
+let historyRequestController = null;
+let historyRequestId = 0;
 let replayRange = '1m';
 let replayAggregator = new CandleAggregator(60);
 let replayProcessedIndex = -1;
@@ -59,6 +63,13 @@ const replayIntervals = {
     '4h': 14400,
     '1d': 86400,
     '1w': 604800
+};
+const timeframeLabels = {
+    '1m': '1分足',
+    '1h': '1時間足',
+    '4h': '4時間足',
+    '1d': '日足',
+    '1w': '週足'
 };
 
 async function loadOlderHistory() {
@@ -83,10 +94,19 @@ async function loadOlderHistory() {
 }
 
 async function loadHistory(range = currentRange) {
+    historyRequestController?.abort();
+    const controller = new AbortController();
+    historyRequestController = controller;
+    const requestId = ++historyRequestId;
+    historyLoadingEl.hidden = false;
+    historyLoadingTextEl.textContent = `${timeframeLabels[range] ?? range}の履歴を読み込み中...`;
+    document.getElementById('chart').setAttribute('aria-busy', 'true');
+
     try {
         const requestedSymbol = currentSymbol;
-        const candles = await api.fetchHistoricalCandles(range, null, initialVisibleCandles + smaWarmupCandles, null, null, requestedSymbol);
-        if (range !== currentRange || requestedSymbol !== currentSymbol || replaySession) {
+        const candles = await api.fetchHistoricalCandles(
+            range, null, initialVisibleCandles + smaWarmupCandles, null, null, requestedSymbol, controller.signal);
+        if (requestId !== historyRequestId || range !== currentRange || requestedSymbol !== currentSymbol || replaySession) {
             return;
         }
 
@@ -105,10 +125,22 @@ async function loadHistory(range = currentRange) {
             document.getElementById('detail-high').textContent = `$${highValue.toLocaleString()}`;
             document.getElementById('detail-low').textContent = `$${lowValue.toLocaleString()}`;
             document.getElementById('detail-close').textContent = `$${closeValue.toLocaleString()}`;
+        } else {
+            chartManager.setCandles([], true);
+            statusEl.textContent = `${timeframeLabels[range] ?? range}の履歴データがありません`;
         }
     } catch (err) {
+        if (controller.signal.aborted) {
+            return;
+        }
         console.error('History load error:', err);
         statusEl.textContent = `履歴データを読み込めません: ${err.message}`;
+    } finally {
+        if (requestId === historyRequestId) {
+            historyRequestController = null;
+            historyLoadingEl.hidden = true;
+            document.getElementById('chart').removeAttribute('aria-busy');
+        }
     }
 }
 
@@ -134,7 +166,7 @@ async function loadReplayCandles(from, minimumCount, symbol = currentSymbol) {
     return candles;
 }
 
-async function loadReplayHistoryContext(range, startTime, symbol) {
+async function loadReplayHistoryContext(range, startTime, symbol, signal = undefined) {
     if (replayIntervals[range] === undefined) {
         return { visible: [], warmup: [] };
     }
@@ -144,7 +176,8 @@ async function loadReplayHistoryContext(range, startTime, symbol) {
         initialVisibleCandles + smaWarmupCandles,
         null,
         null,
-        symbol);
+        symbol,
+        signal);
     const visibleStart = Math.max(0, history.length - initialVisibleCandles);
     return {
         visible: history.slice(visibleStart),
@@ -291,7 +324,9 @@ function renderPendingOrders() {
 function updateTimeframeControlsForReplay(isReplay) {
     timeframeButtons.forEach(button => {
         button.disabled = false;
-        button.classList.toggle('active', isReplay ? button.dataset.range === replayRange : button.dataset.range === currentRange);
+        const isActive = isReplay ? button.dataset.range === replayRange : button.dataset.range === currentRange;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
     });
     instrumentSelect.disabled = isReplay;
 }
@@ -732,25 +767,48 @@ function connectPriceStream() {
 
 async function setRange(range) {
     if (replaySession) {
-        const sessionSymbol = replaySession.symbol;
-        const historyContext = await loadReplayHistoryContext(range, replaySession.startTime, sessionSymbol);
-        if (!replaySession || replaySession.symbol !== sessionSymbol) return;
-        replayContextCandles = historyContext.visible;
-        replayWarmupCandles = historyContext.warmup;
-        replayRange = range;
-        currentRange = range;
-        replaySession.range = range;
-        rebuildReplayChart();
-        updateTimeframeControlsForReplay(true);
-        setReplayStatus();
-        saveReplaySession(true);
+        if (range === replayRange) return;
+        historyRequestController?.abort();
+        const controller = new AbortController();
+        historyRequestController = controller;
+        const requestId = ++historyRequestId;
+        historyLoadingEl.hidden = false;
+        historyLoadingTextEl.textContent = `${timeframeLabels[range] ?? range}の履歴を読み込み中...`;
+        document.getElementById('chart').setAttribute('aria-busy', 'true');
+        try {
+            const sessionSymbol = replaySession.symbol;
+            const historyContext = await loadReplayHistoryContext(
+                range, replaySession.startTime, sessionSymbol, controller.signal);
+            if (requestId !== historyRequestId || !replaySession || replaySession.symbol !== sessionSymbol) return;
+            replayContextCandles = historyContext.visible;
+            replayWarmupCandles = historyContext.warmup;
+            replayRange = range;
+            currentRange = range;
+            replaySession.range = range;
+            rebuildReplayChart();
+            updateTimeframeControlsForReplay(true);
+            setReplayStatus();
+            saveReplaySession(true);
+        } catch (err) {
+            if (!controller.signal.aborted) {
+                statusEl.textContent = `履歴データを読み込めません: ${err.message}`;
+            }
+        } finally {
+            if (requestId === historyRequestId) {
+                historyRequestController = null;
+                historyLoadingEl.hidden = true;
+                document.getElementById('chart').removeAttribute('aria-busy');
+            }
+        }
         return;
     }
 
+    if (range === currentRange) return;
     currentRange = range;
     timeframeButtons.forEach(button => {
         const isActive = button.dataset.range === range;
         button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
     });
     loadHistory(range);
 }

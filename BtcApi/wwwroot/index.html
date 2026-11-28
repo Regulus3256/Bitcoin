@@ -6,7 +6,7 @@
     <!-- 外部ライブラリ -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <!-- 自作CSS -->
-    <link rel="stylesheet" href="css/style.css?v=20261126-demo-page">
+    <link rel="stylesheet" href="css/style.css?v=20261128-history-loading">
 </head>
 <body>
     <header class="page-header">
@@ -52,11 +52,15 @@
         <label class="market-select-label">銘柄
             <select id="market-symbol-select" aria-label="銘柄"></select>
         </label>
-        <button class="timeframe-btn" data-range="1m">1分足</button>
-        <button class="timeframe-btn active" data-range="1h">1時間足</button>
-        <button class="timeframe-btn" data-range="4h">4時間足</button>
-        <button class="timeframe-btn" data-range="1d">日足</button>
-        <button class="timeframe-btn" data-range="1w">週足</button>
+        <button type="button" class="timeframe-btn" data-range="1m" aria-pressed="false">1分足</button>
+        <button type="button" class="timeframe-btn active" data-range="1h" aria-pressed="true">1時間足</button>
+        <button type="button" class="timeframe-btn" data-range="4h" aria-pressed="false">4時間足</button>
+        <button type="button" class="timeframe-btn" data-range="1d" aria-pressed="false">日足</button>
+        <button type="button" class="timeframe-btn" data-range="1w" aria-pressed="false">週足</button>
+        <div id="history-loading" class="history-loading" role="status" aria-live="polite" hidden>
+            <span class="history-loading-spinner" aria-hidden="true"></span>
+            <span class="history-loading-text"></span>
+        </div>
         <a id="demo-mode-toggle" class="demo-mode-button" href="/demo">
             <span aria-hidden="true">↗</span>
             <span>デモ取引</span>
@@ -68,6 +72,6 @@
     </div>
     <div id="status" class="status">Connecting...</div>
 
-    <script type="module" src="js/main.js?v=20261126-demo-page"></script>
+    <script type="module" src="js/main.js?v=20261128-history-loading"></script>
 </body>
 </html>
