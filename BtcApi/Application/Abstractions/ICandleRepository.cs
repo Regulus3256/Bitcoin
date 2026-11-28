@@ -20,6 +20,12 @@ public interface ICandleRepository
     /// <returns>時刻の昇順に並んだローソク足配列。</returns>
     Task<CandleData[]> GetCandlesAsync(MarketInstrument instrument, CandleTimeframe timeframe, long? from, long? through, long? before, int limit, CancellationToken cancellationToken);
 
+    /// <summary>指定された1分足時刻を含む日足・週足を再集計します。</summary>
+    Task RefreshRollupsAsync(MarketInstrument instrument, long minuteTime, CancellationToken cancellationToken);
+
+    /// <summary>既存の1分足から日足・週足を一度だけ作成します。</summary>
+    Task BackfillRollupsAsync(MarketInstrument instrument, CancellationToken cancellationToken);
+
     /// <summary>最新の保存済み1分足を取得します。</summary>
     /// <param name="cancellationToken">処理を中断するトークン。</param>
     /// <returns>最新ローソク足。未保存の場合はnull。</returns>

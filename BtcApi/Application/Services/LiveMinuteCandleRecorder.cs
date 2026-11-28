@@ -14,6 +14,7 @@ public sealed class LiveMinuteCandleRecorder : ILiveCandleRecorder
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<string, CandleData> _currentCandles = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTime> _lastPersistedAtUtc = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, long> _lastRollupRefreshMinute = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>ライブ足記録サービスを生成します。</summary>
     /// <param name="repository">1分足の永続化先。</param>
@@ -66,6 +67,28 @@ public sealed class LiveMinuteCandleRecorder : ILiveCandleRecorder
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "ライブ1分足のDB保存に失敗しました");
+                    return;
+                }
+
+                if (!_lastRollupRefreshMinute.TryGetValue(instrument.Code, out var refreshedMinute)
+                    || refreshedMinute != minuteStart)
+                {
+                    try
+                    {
+                        if (_lastRollupRefreshMinute.TryGetValue(instrument.Code, out refreshedMinute)
+                            && (refreshedMinute / 86_400 != minuteStart / 86_400
+                                || refreshedMinute / 604_800 != minuteStart / 604_800))
+                        {
+                            await _repository.RefreshRollupsAsync(instrument, refreshedMinute, cancellationToken);
+                        }
+
+                        await _repository.RefreshRollupsAsync(instrument, minuteStart, cancellationToken);
+                        _lastRollupRefreshMinute[instrument.Code] = minuteStart;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError(ex, "日足・週足ロールアップの更新に失敗しました");
+                    }
                 }
             }
         }

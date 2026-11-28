@@ -26,6 +26,7 @@ public sealed class LiveMinuteCandleRecorderTests
         Assert.Equal(90m, candle.Low);
         Assert.Equal(90m, candle.Close);
         Assert.Equal("kraken-live", repository.Upserts[^1].Source);
+        Assert.Single(repository.RollupRefreshes);
     }
 
     [Fact]
@@ -44,5 +45,26 @@ public sealed class LiveMinuteCandleRecorderTests
         Assert.Equal(90m, nextMinute.High);
         Assert.Equal(90m, nextMinute.Low);
         Assert.Equal(90m, nextMinute.Close);
+        Assert.Equal(2, repository.RollupRefreshes.Count);
+    }
+
+    [Fact]
+    public async Task RecordAsync_RefreshesCompletedDayBeforeStartingNewDay()
+    {
+        var repository = new InMemoryCandleRepository();
+        var recorder = new LiveMinuteCandleRecorder(repository, NullLogger<LiveMinuteCandleRecorder>.Instance);
+        var lastMinute = new DateTime(2025, 1, 1, 23, 59, 0, DateTimeKind.Utc);
+        var nextDay = lastMinute.AddMinutes(1);
+
+        await recorder.RecordAsync(new PriceSnapshot("BTC", 100m, lastMinute), CancellationToken.None);
+        await recorder.RecordAsync(new PriceSnapshot("BTC", 110m, nextDay), CancellationToken.None);
+
+        var expectedTimes = new[]
+        {
+            new DateTimeOffset(lastMinute).ToUnixTimeSeconds(),
+            new DateTimeOffset(lastMinute).ToUnixTimeSeconds(),
+            new DateTimeOffset(nextDay).ToUnixTimeSeconds()
+        };
+        Assert.Equal(expectedTimes, repository.RollupRefreshes.Select(refresh => refresh.MinuteTime));
     }
 }

@@ -19,6 +19,7 @@ internal sealed class InMemoryCandleRepository : ICandleRepository
     public DateOnly? ImportedDay { get; private set; }
     public IReadOnlyCollection<CandleData> ImportedDayCandles { get; private set; } = [];
     public List<(CandleData Candle, string Source)> Upserts { get; } = [];
+    public List<(MarketInstrument Instrument, long MinuteTime)> RollupRefreshes { get; } = [];
 
     public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -40,6 +41,15 @@ internal sealed class InMemoryCandleRepository : ICandleRepository
         LastLimit = limit;
         return Task.FromResult(CandlesToReturn);
     }
+
+    public Task RefreshRollupsAsync(MarketInstrument instrument, long minuteTime, CancellationToken cancellationToken)
+    {
+        RollupRefreshes.Add((instrument, minuteTime));
+        return Task.CompletedTask;
+    }
+
+    public Task BackfillRollupsAsync(MarketInstrument instrument, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 
     public Task<CandleData?> GetLatestMinuteCandleAsync(MarketInstrument instrument, CancellationToken cancellationToken) =>
         Task.FromResult(LatestCandle);

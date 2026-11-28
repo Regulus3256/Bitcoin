@@ -71,7 +71,29 @@ public sealed class CandleDatabaseStartupService : IHostedService
             }
         }
 
-        _importTask = _importer.ImportMissingMonthsAsync(_lifetime.ApplicationStopping);
+        _importTask = RunHistoricalMaintenanceAsync(_lifetime.ApplicationStopping);
+    }
+
+    private async Task RunHistoricalMaintenanceAsync(CancellationToken cancellationToken)
+    {
+        foreach (var instrument in MarketInstrument.Supported)
+        {
+            try
+            {
+                await _repository.BackfillRollupsAsync(instrument, cancellationToken);
+                _logger.LogInformation("日足・週足のバックフィルが完了しました: {Instrument}", instrument.Code);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "日足・週足のバックフィルに失敗しました: {Instrument}", instrument.Code);
+            }
+        }
+
+        await _importer.ImportMissingMonthsAsync(cancellationToken);
     }
 
     /// <summary>ホスト終了時にバックグラウンド取り込みの終了を待ちます。</summary>
